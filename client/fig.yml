@@ -1,0 +1,21 @@
+test:
+  build: .
+  command: /mnt/run_test.sh
+  volumes:
+   - ~/gopath/src/github.com/dropbox/changes-artifacts:/go/src/github.com/dropbox/changes-artifacts
+   - run_test.sh:/mnt/run_test.sh
+   - run_server.sh:/mnt/run_server.sh
+  links:
+   - artifactsdb
+   - fakes3
+
+artifactsdb:
+  image: postgres:latest
+  environment:
+   - POSTGRES_USER=artifacts
+   - POSTGRES_PASSWORD=artifacts
+
+fakes3:
+  build: fakes3
+  ports:
+   - "4569:4569"
