@@ -39,7 +39,7 @@ func CreateArtifact(req CreateArtifactReq, bucket *model.Bucket, db database.Dat
 		return nil, fmt.Errorf("Bucket is already closed")
 	}
 
-	artifact, err := db.GetArtifactByName(bucket.Id, req.Name);
+	artifact, err := db.GetArtifactByName(bucket.Id, req.Name)
 	if err == nil {
 		return nil, fmt.Errorf("Artifact already exists")
 	}
@@ -74,7 +74,7 @@ func CreateArtifact(req CreateArtifactReq, bucket *model.Bucket, db database.Dat
 
 func HandleCreateArtifact(r render.Render, req *http.Request, db database.Database, params martini.Params, bucket *model.Bucket) {
 	if bucket == nil {
-		JsonErrorf(r, http.StatusBadRequest,"Error: no bucket specified")
+		JsonErrorf(r, http.StatusBadRequest, "Error: no bucket specified")
 		return
 	}
 
@@ -436,7 +436,7 @@ func PutArtifact(artifact *model.Artifact, db database.Database, bucket *s3.Buck
 			// TODO: s/ERROR/WAITING_FOR_UPLOAD/ ?
 			log.Printf("Error uploading to S3: %s\n", err)
 			artifact.State = model.ERROR
-			err2 := db.UpdateArtifact(artifact);
+			err2 := db.UpdateArtifact(artifact)
 			if err2 != nil {
 				log.Printf("Error while handling error: %s", err2.Error())
 			}

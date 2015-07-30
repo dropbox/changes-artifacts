@@ -96,7 +96,7 @@ func (c *ArtifactStoreClient) parseBucketFromResponse(body io.ReadCloser) (*Buck
 
 	return &Bucket{
 		client: c,
-		bucket:    bucket,
+		bucket: bucket,
 	}, nil
 }
 
@@ -125,7 +125,7 @@ func parseErrorForResponse(body io.ReadCloser) (string, error) {
 // depending on the type of status code in the response, and format
 // it in a nice way showing the url and method.
 func determineResponseError(resp *http.Response, url string, method string) *ArtifactsError {
-	parsedError, err := parseErrorForResponse(resp.Body);
+	parsedError, err := parseErrorForResponse(resp.Body)
 	if err != nil {
 		parsedError = fmt.Sprintf("Unknown error, could not parse body: %s", err.Error())
 	}
@@ -162,7 +162,7 @@ func (c *ArtifactStoreClient) NewBucket(bucketName string, owner string, deadlin
 
 type Bucket struct {
 	client *ArtifactStoreClient
-	bucket    *model.Bucket
+	bucket *model.Bucket
 }
 
 func (b *Bucket) parseArtifactFromResponse(body io.ReadCloser) (Artifact, *ArtifactsError) {
@@ -178,7 +178,7 @@ func (b *Bucket) parseArtifactFromResponse(body io.ReadCloser) (Artifact, *Artif
 
 	return &ArtifactImpl{
 		artifact: artifact,
-		bucket:  b,
+		bucket:   b,
 	}, nil
 }
 
@@ -251,7 +251,7 @@ type Artifact interface {
 
 type ArtifactImpl struct {
 	artifact *model.Artifact
-	bucket  *Bucket
+	bucket   *Bucket
 }
 
 func (ai *ArtifactImpl) GetArtifactModel() *model.Artifact {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/dropbox/changes-artifacts/model"
-	// _ "github.com/vektra/mockery" // Required to generate MockDatabase
+	_ "github.com/vektra/mockery" // Required to generate MockDatabase
 )
 
 //go:generate stringer -type=DBErrorType
