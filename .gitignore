@@ -1,3 +1,5 @@
-coverage.out
 .arcconfig
+.vagrant
+*.deb
+coverage.out
 env

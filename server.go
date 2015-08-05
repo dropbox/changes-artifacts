@@ -119,7 +119,14 @@ func main() {
 	var flagVerbose bool
 	flag.BoolVar(&flagVerbose, "verbose", false, "Show verbose request and DB logging")
 
+	showVersion := flag.Bool("version", false, "Show version number and quit")
+
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(common.Version)
+		return
+	}
 
 	conf := getConfigFrom(flagConfigFile)
 
