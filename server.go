@@ -116,8 +116,8 @@ func main() {
 	var flagCPUProfile string
 	flag.StringVar(&flagCPUProfile, "cpuprofile", "", "File to write CPU profile into")
 
-	var flagVerbose bool
-	flag.BoolVar(&flagVerbose, "verbose", false, "Show verbose request and DB logging")
+	flagVerbose := flag.Bool("verbose", false, "Enable request logging")
+	flagLogDBQueries := flag.Bool("log-db-queries", false, "Enable DB query logging (Use with care, will dump raw logchunk contents to logfile)")
 
 	showVersion := flag.Bool("version", false, "Show version number and quit")
 
@@ -159,7 +159,7 @@ func main() {
 	}
 
 	dbmap := &gorp.DbMap{Db: db, Dialect: gorp.PostgresDialect{}}
-	if flagVerbose {
+	if *flagLogDBQueries {
 		dbmap.TraceOn("[gorp]", log.New(os.Stdout, "artifacts:", log.Lmicroseconds))
 	}
 	gdb := database.NewGorpDatabase(dbmap)
@@ -200,7 +200,7 @@ func main() {
 	m.Map(bucket)
 	m.Use(render.Renderer())
 
-	if flagVerbose {
+	if *flagVerbose {
 		m.Use(martini.Logger())
 	}
 
