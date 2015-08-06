@@ -1,6 +1,6 @@
 #!/bin/bash -eux
 
-GO_VERSION=1.4
+GO_VERSION=1.4.2
 
 if [ ! -x /usr/local/go/bin/go ]
 then

@@ -3,3 +3,5 @@
 *.deb
 coverage.out
 env
+junit.xml
+test.output
