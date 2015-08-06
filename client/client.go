@@ -88,6 +88,7 @@ func (c *ArtifactStoreClient) parseBucketFromResponse(body io.ReadCloser) (*Buck
 	if err != nil {
 		return nil, NewRetriableError(err.Error())
 	}
+	body.Close()
 
 	bucket := new(model.Bucket)
 	if err := json.Unmarshal(bText, bucket); err != nil {
@@ -109,6 +110,7 @@ func parseErrorForResponse(body io.ReadCloser) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	body.Close()
 
 	err = json.Unmarshal(bText, &bJson)
 	if err != nil {
@@ -170,6 +172,7 @@ func (b *Bucket) parseArtifactFromResponse(body io.ReadCloser) (Artifact, *Artif
 	if err != nil {
 		return nil, NewRetriableError(err.Error())
 	}
+	body.Close()
 
 	artifact := new(model.Artifact)
 	if err := json.Unmarshal(bText, artifact); err != nil {
@@ -239,14 +242,54 @@ func (b *Bucket) GetArtifact(name string) (Artifact, *ArtifactsError) {
 	return b.parseArtifactFromResponse(body)
 }
 
+func (b *Bucket) ListArtifacts() ([]Artifact, *ArtifactsError) {
+	body, err := getApiJson(b.client.server + "/buckets/" + b.bucket.Id + "/artifacts/")
+	if err != nil {
+		return nil, NewRetriableError(err.Error())
+	}
+
+	return b.parseArtifactListFromResponse(body)
+}
+
+func (b *Bucket) parseArtifactListFromResponse(body io.ReadCloser) ([]Artifact, *ArtifactsError) {
+	bText, err := ioutil.ReadAll(body)
+	if err != nil {
+		return nil, NewRetriableError(err.Error())
+	}
+	body.Close()
+
+	artifacts := []model.Artifact{}
+	if err := json.Unmarshal(bText, &artifacts); err != nil {
+		return nil, NewTerminalError(err.Error())
+	}
+
+	wrappedArtifacts := make([]Artifact, len(artifacts))
+	for i, _ := range artifacts {
+		wrappedArtifacts[i] = &ArtifactImpl{
+			artifact: &artifacts[i],
+			bucket:   b,
+		}
+	}
+
+	return wrappedArtifacts, nil
+}
+
 func (b *Bucket) Close() *ArtifactsError {
 	_, err := postApiJson(b.client.server+"/buckets/"+b.bucket.Id+"/close", map[string]interface{}{})
 	return err
 }
 
 type Artifact interface {
+	// Returns a read-only copy of the raw model.Artifact instance associated with the artifact
 	GetArtifactModel() *model.Artifact
+
+	// Returns a handle to the bucket containing the artifact
 	GetBucket() *Bucket
+
+	// Return raw contents of the artifact (artifact file or text of a log stream)
+	// as an io.ReadCloser. It is the responsibility of the caller to close the
+	// io.ReadCloser
+	GetContent() (io.ReadCloser, *ArtifactsError)
 }
 
 type ArtifactImpl struct {

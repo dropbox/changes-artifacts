@@ -373,3 +373,43 @@ func TestPostStreamedArtifact(t *testing.T) {
 	buf.ReadFrom(content)
 	assert.Equal(t, 30, buf.Len())
 }
+
+func TestCreateAndListArtifacts(t *testing.T) {
+	bucketName := "bucketName"
+	ownerName := "ownerName"
+	artifactName1 := "artifactName1"
+	artifactName2 := "artifactName2"
+
+	if testing.Short() {
+		t.Skip("Skipping end-to-end test in short mode.")
+	}
+
+	client := setup(t)
+
+	var bucket *Bucket
+	var streamedArtifact *StreamedArtifact
+	var chunkedArtifact *ChunkedArtifact
+	var err error
+	var artifacts []Artifact
+
+	bucket, err = client.NewBucket(bucketName, ownerName, 31)
+	assert.NotNil(t, bucket)
+	assert.NoError(t, err)
+
+	streamedArtifact, err = bucket.NewStreamedArtifact(artifactName1, 30)
+	assert.NotNil(t, streamedArtifact)
+	assert.NoError(t, err)
+
+	chunkedArtifact, err = bucket.NewChunkedArtifact(artifactName2)
+	assert.NotNil(t, chunkedArtifact)
+	assert.NoError(t, err)
+
+	artifacts, err = bucket.ListArtifacts()
+	assert.NotNil(t, artifacts)
+	assert.Nil(t, err)
+	assert.Len(t, artifacts, 2)
+
+	// We really shouldn't worry about order here.
+	assert.Equal(t, artifactName1, artifacts[0].GetArtifactModel().Name)
+	assert.Equal(t, artifactName2, artifacts[1].GetArtifactModel().Name)
+}
