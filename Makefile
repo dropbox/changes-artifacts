@@ -19,11 +19,12 @@ deb:
 	cp $(BIN) /tmp/changes-artifacts-build/usr/bin/changes-artifacts
 
 	@echo "Creating .deb file"
-	fpm -s dir -t deb -n "changes-artifacts" -v "`$(BIN) --version`-$(REV)" -C /tmp/changes-artifacts-build .
+	fpm -s dir -t deb -n "changes-artifacts" -v "`$(BIN) --version`" -C /tmp/changes-artifacts-build .
 
 install:
 	@make deps
-	go install -v ./...
+	go clean -i ./...
+	go install -ldflags "-X github.com/dropbox/changes-artifacts/common.gitVersion $(REV)" -v ./...
 
 deps:
 	# -f is needed to prevent `go get -u` from cribbing if we use git@github.com:... urls

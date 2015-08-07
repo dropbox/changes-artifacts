@@ -36,6 +36,10 @@ func HomeHandler(res http.ResponseWriter, req *http.Request) {
 	res.Write([]byte("Hello, I am Artie Facts, the artifact store that stores artifacts."))
 }
 
+func VersionHandler(res http.ResponseWriter, req *http.Request) {
+	res.Write([]byte(common.GetVersion()))
+}
+
 func bindBucket(w http.ResponseWriter, r render.Render, c martini.Context, params martini.Params, db database.Database) {
 	bucket, err := db.GetBucket(params["bucket_id"])
 	if bucket == nil {
@@ -124,7 +128,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Println(common.Version)
+		fmt.Println(common.GetVersion())
 		return
 	}
 
@@ -212,6 +216,7 @@ func main() {
 	r := martini.NewRouter()
 	// '/' url is used to determine if the server is up. Do not remove.
 	r.Get("/", HomeHandler)
+	r.Get("/version", VersionHandler)
 	r.Get("/buckets", api.ListBuckets)
 	r.Post("/buckets", api.HandleCreateBucket)
 	r.Group("/buckets/:bucket_id", func(br martini.Router) {
