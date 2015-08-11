@@ -6,6 +6,8 @@ export PATH=$GOPATH/bin:$PATH
 go get -v github.com/jstemmer/go-junit-report
 go get -v ./...
 
+go run server.go -migrations-only
+
 go run server.go &
 sudo fakes3 -r /var/cache/fakes3 -p 4569 &
 

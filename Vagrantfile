@@ -16,5 +16,5 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
   config.vm.synced_folder "./", "/home/vagrant/src/github.com/dropbox/changes-artifacts", owner: "vagrant", group: "vagrant"
 
-  config.vm.provision :shell, :path => "support/bootstrap-vagrant.sh"
+  config.vm.provision :shell, :privileged => false, :path => "support/bootstrap-vagrant.sh"
 end

@@ -30,6 +30,7 @@ import (
 	"github.com/go-martini/martini"
 	_ "github.com/lib/pq"
 	"github.com/martini-contrib/render"
+	"github.com/rubenv/sql-migrate"
 )
 
 func HomeHandler(res http.ResponseWriter, req *http.Request) {
@@ -113,6 +114,22 @@ func getConfigFrom(configFile string) config {
 	return config{}
 }
 
+func performMigrations(db *sql.DB) error {
+	migrations := &migrate.AssetMigrationSource{
+		Asset:    database.Asset,
+		AssetDir: database.AssetDir,
+		Dir:      "migrations",
+	}
+
+	n, err := migrate.Exec(db, "postgres", migrations, migrate.Up)
+	log.Printf("Completed %d migrations\n", n)
+	if err != nil {
+		log.Println("Error completing DB migration:", err)
+	}
+
+	return err
+}
+
 func main() {
 	var flagConfigFile string
 	flag.StringVar(&flagConfigFile, "config", "", "JSON Config file containing DB parameters and S3 information")
@@ -125,6 +142,8 @@ func main() {
 
 	showVersion := flag.Bool("version", false, "Show version number and quit")
 
+	onlyPerformMigrations := flag.Bool("migrations-only", false, "Only perform database migrations and quit")
+
 	flag.Parse()
 
 	if *showVersion {
@@ -133,6 +152,31 @@ func main() {
 	}
 
 	conf := getConfigFrom(flagConfigFile)
+
+	// ----- BEGIN DB Connections Setup -----
+	db, err := sql.Open("postgres", conf.DbConnstr)
+
+	if err != nil {
+		log.Fatalf("Could not connect to the database: %v\n", err)
+	}
+
+	if *onlyPerformMigrations {
+		err := performMigrations(db)
+		db.Close()
+		if err != nil {
+			os.Exit(1)
+		}
+
+		return
+	}
+
+	defer db.Close()
+	dbmap := &gorp.DbMap{Db: db, Dialect: gorp.PostgresDialect{}}
+	if *flagLogDBQueries {
+		dbmap.TraceOn("[gorp]", log.New(os.Stdout, "artifacts:", log.Lmicroseconds))
+	}
+	gdb := database.NewGorpDatabase(dbmap)
+	// ----- END DB Connections Setup -----
 
 	// ----- BEGIN CPU profiling -----
 	if flagCPUProfile != "" {
@@ -155,20 +199,6 @@ func main() {
 	}
 	// ----- END CPU Profiling -----
 
-	// ----- BEGIN DB Connections -----
-	db, err := sql.Open("postgres", conf.DbConnstr)
-
-	if err != nil {
-		log.Fatalf("Could not connect to the database: %v\n", err)
-	}
-
-	dbmap := &gorp.DbMap{Db: db, Dialect: gorp.PostgresDialect{}}
-	if *flagLogDBQueries {
-		dbmap.TraceOn("[gorp]", log.New(os.Stdout, "artifacts:", log.Lmicroseconds))
-	}
-	gdb := database.NewGorpDatabase(dbmap)
-	// ----- END DB Connections -----
-
 	// ----- BEGIN AWS Connections -----
 	var region aws.Region
 	var auth aws.Auth
@@ -190,12 +220,7 @@ func main() {
 	bucket := s3Client.Bucket(conf.S3Bucket)
 	// ----- END AWS Connections -----
 
-	// TODO: These should be extracted out into a versioned migration system like
-	// https://bitbucket.org/liamstask/goose or https://github.com/mattes/migrate
 	gdb.RegisterEntities()
-	if err := gdb.CreateEntities(); err != nil {
-		log.Fatalf("Error while creating/updating tables @ %s: %s\n", conf.DbConnstr, err)
-	}
 
 	m := martini.New()
 	m.Use(martini.Recovery())

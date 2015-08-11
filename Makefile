@@ -6,9 +6,6 @@ BIN=${GOPATH}/bin/changes-artifacts
 # E.g., 1438708515-753e183
 REV=`git show -s --format=%ct-%h HEAD`
 
-# TODO(anupc): Once we have a clear database migration system in place, make sure the migration
-# tool and sql files are included in the deb.
-
 deb:
 	@echo "Compiling changes-artifacts"
 	@make install
@@ -27,10 +24,4 @@ install:
 	go install -ldflags "-X github.com/dropbox/changes-artifacts/common.gitVersion $(REV)" -v ./...
 
 deps:
-	# -f is needed to prevent `go get -u` from cribbing if we use git@github.com:... urls
-	# instead of https://github.com/... for some repos.
-	#
-	# -u is used to make sure we get the latest version of all dependencies - this is
-	# potentially dangerous, but is useful to make sure there are no differences between
-	# packages produced by multiple users.
-	go get -f -u -v ./...
+	go get -v ./...

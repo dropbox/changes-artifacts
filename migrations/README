@@ -1,0 +1,10 @@
+Artifacts Store Database Migrations
+===================================
+
+Add any migration scripts titled <seq_no>_<short_message>.sql to this folder. Scripts will be
+executed in <seq_no> order. Please see https://github.com/rubenv/sql-migrate#writing-migrations for
+guidelines on how to write the migration scripts.
+
+NOTE: Please run `go generate -v ./...` after making any changes to this folder. We are embedding the
+migration script as a go file (this translation is performed by `go generate`). Without running `go
+generate`, the migration file will *NOT* be included and applied.

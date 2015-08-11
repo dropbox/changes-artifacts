@@ -13,8 +13,8 @@ install_go() {
     sudo tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
     echo "Installed Go binary...."
 
-    echo 'export PATH=/usr/local/go/bin:$PATH' > /etc/profile.d/golang.sh
-    echo 'export GOPATH=~/' > /etc/profile.d/gopath.sh
+    echo 'export PATH=/usr/local/go/bin:$PATH' | sudo tee /etc/profile.d/golang.sh
+    echo 'export GOPATH=~/' | sudo tee /etc/profile.d/gopath.sh
   else
     echo "Go binary already installed"
   fi
