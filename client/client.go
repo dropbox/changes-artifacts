@@ -350,12 +350,17 @@ type StreamedArtifact struct {
 	*ArtifactImpl
 }
 
-func (artifact *ChunkedArtifact) pushLogChunks() {
-	var err *ArtifactsError
+func newTicker() *backoff.Ticker {
 	b := backoff.NewExponentialBackOff()
 	b.MaxInterval = 15 * time.Second
+
+	return backoff.NewTicker(b)
+}
+
+func (artifact *ChunkedArtifact) pushLogChunks() {
+	var err *ArtifactsError
 	for logChunk := range artifact.stringStream {
-		ticker := backoff.NewTicker(b)
+		ticker := newTicker()
 		for _ = range ticker.C {
 			_, err = postApiJson(fmt.Sprintf("%s/buckets/%s/artifacts/%s", artifact.bucket.client.server, artifact.bucket.bucket.Id, artifact.artifact.Name), map[string]interface{}{
 				"size":       len(logChunk),

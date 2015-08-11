@@ -9,7 +9,7 @@ go get -v ./...
 go run server.go &
 sudo fakes3 -r /var/cache/fakes3 -p 4569 &
 
-go test -v ./... | tee test.output | go-junit-report > junit.xml
+go test -race -cover -v ./... | tee test.output | go-junit-report > junit.xml
 
 pkill -9 server
 sudo pkill -9 fakes3
