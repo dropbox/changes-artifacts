@@ -23,7 +23,7 @@ func createS3Bucket(t *testing.T) (*s3test.Server, *s3.Bucket) {
 
 	t.Logf("Fake S3 server up at %s\n", s3Server.URL())
 
-	s3Client := s3.New(aws.Auth{"abc", "123"}, aws.Region{
+	s3Client := s3.New(aws.Auth{AccessKey: "abc", SecretKey: "123"}, aws.Region{
 		Name:                 "fake-artifacts-test-region",
 		S3Endpoint:           s3Server.URL(),
 		S3LocationConstraint: true,

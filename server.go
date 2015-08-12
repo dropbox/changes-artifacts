@@ -212,7 +212,7 @@ func main() {
 		auth = aws.Auth{}
 	} else {
 		region = aws.Regions[conf.S3Region]
-		auth = aws.Auth{conf.S3AccessKey, conf.S3SecretKey}
+		auth = aws.Auth{AccessKey: conf.S3AccessKey, SecretKey: conf.S3SecretKey}
 	}
 
 	s3Client := s3.New(auth, region)
