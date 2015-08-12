@@ -243,8 +243,6 @@ func CloseArtifact(artifact *model.Artifact, db database.Database, s3bucket *s3.
 
 // Merges all of the individual chunks into a single object and stores it on s3.
 // The log chunks are stored in the database, while the object is uploaded to s3.
-//
-// XXX shouldn't we garbage collect the log chunks after the object is on s3?
 func MergeLogChunks(artifact *model.Artifact, db database.Database, s3bucket *s3.Bucket) error {
 	switch artifact.State {
 	case model.APPEND_COMPLETE:
@@ -305,6 +303,19 @@ func MergeLogChunks(artifact *model.Artifact, db database.Database, s3bucket *s3
 			if err := db.UpdateArtifact(artifact); err != nil {
 				return err
 			}
+
+			// From this point onwards, we will not send back any errors back to the user. If we are
+			// unable to delete logchunks, we log it to Sentry instead.
+			if n, err := db.DeleteLogChunksForArtifact(artifact.Id); err != nil {
+				// TODO: Send this error to Sentry
+				log.Printf("Error deleting logchunks for artifact %d: %v\n", artifact.Id, err)
+				return nil
+			} else if n != int64(len(logChunks)) {
+				// TODO: Send this error to Sentry
+				log.Printf("Mismatch in number of logchunks while deleting logchunks for artifact %d:"+
+					"Expected: %d Actual: %d\n", artifact.Id, len(logChunks), n)
+			}
+
 			return nil
 		case err := <-errChan:
 			return err

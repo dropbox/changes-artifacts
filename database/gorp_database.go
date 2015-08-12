@@ -123,6 +123,23 @@ func (db *GorpDatabase) ListLogChunksInArtifact(artifactId int64) ([]model.LogCh
 	return logChunks, nil
 }
 
+// DeleteLogChunksForArtifact deletes all log chunks for an artifact.
+// Returns (number of deleted rows, err)
+func (db *GorpDatabase) DeleteLogChunksForArtifact(artifactID int64) (int64, *DatabaseError) {
+	res, err := db.dbmap.Exec("DELETE FROM logchunk WHERE artifactid = $1", artifactID)
+	if err != nil {
+		rows, _ := res.RowsAffected()
+		return rows, WrapInternalDatabaseError(err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return rows, WrapInternalDatabaseError(err)
+	}
+
+	return rows, nil
+}
+
 func (db *GorpDatabase) GetArtifactByName(bucketId string, artifactName string) (*model.Artifact, *DatabaseError) {
 	var artifact model.Artifact
 	if err := db.dbmap.SelectOne(&artifact, "SELECT * FROM artifact WHERE bucketid = :bucketid AND name = :artifactname",

@@ -1,4 +1,5 @@
 {
+  "exclude": "(_Database.go$|_string.go$|^database/bindata.go$)",
   "linters": {
     "sample": {
       "type": "golint"

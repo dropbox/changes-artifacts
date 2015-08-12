@@ -364,7 +364,7 @@ func TestMergeLogChunks(t *testing.T) {
 	mockdb.On("ListLogChunksInArtifact", int64(2)).Return(nil, database.MockDatabaseError()).Once()
 	assert.Error(t, MergeLogChunks(&model.Artifact{Id: 2, State: model.APPEND_COMPLETE, Size: 10}, mockdb, nil))
 
-	// Stitching chunks and uploading to S3 successfully
+	// Stitching chunks and uploading to S3 successfully (but deleting logchunks fail)
 	mockdb.On("UpdateArtifact", &model.Artifact{
 		Id:       2,
 		State:    model.UPLOADING,
@@ -384,9 +384,41 @@ func TestMergeLogChunks(t *testing.T) {
 		BucketId: "TestMergeLogChunks__bucketName",
 		Size:     10,
 	}).Return(nil).Once()
+	mockdb.On("DeleteLogChunksForArtifact", int64(2)).Return(int64(0), database.MockDatabaseError()).Once()
 	s3Server, s3Bucket := createS3Bucket(t)
 	assert.NoError(t, MergeLogChunks(&model.Artifact{
 		Id:       2,
+		State:    model.APPEND_COMPLETE,
+		Size:     10,
+		Name:     "TestMergeLogChunks__artifactName",
+		BucketId: "TestMergeLogChunks__bucketName",
+	}, mockdb, s3Bucket))
+	s3Server.Quit()
+
+	// Stitching chunks and uploading to S3 successfully
+	mockdb.On("UpdateArtifact", &model.Artifact{
+		Id:       3,
+		State:    model.UPLOADING,
+		Size:     10,
+		Name:     "TestMergeLogChunks__artifactName",
+		BucketId: "TestMergeLogChunks__bucketName",
+	}).Return(nil).Once()
+	mockdb.On("ListLogChunksInArtifact", int64(3)).Return([]model.LogChunk{
+		model.LogChunk{Content: "01234"},
+		model.LogChunk{Content: "56789"},
+	}, nil).Once()
+	mockdb.On("DeleteLogChunksForArtifact", int64(3)).Return(int64(2), nil).Once()
+	mockdb.On("UpdateArtifact", &model.Artifact{
+		Id:       3,
+		State:    model.UPLOADED,
+		S3URL:    "/TestMergeLogChunks__bucketName/TestMergeLogChunks__artifactName",
+		Name:     "TestMergeLogChunks__artifactName",
+		BucketId: "TestMergeLogChunks__bucketName",
+		Size:     10,
+	}).Return(nil).Once()
+	s3Server, s3Bucket = createS3Bucket(t)
+	assert.NoError(t, MergeLogChunks(&model.Artifact{
+		Id:       3,
 		State:    model.APPEND_COMPLETE,
 		Size:     10,
 		Name:     "TestMergeLogChunks__artifactName",

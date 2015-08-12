@@ -103,6 +103,9 @@ type Database interface {
 
 	ListLogChunksInArtifact(int64) ([]model.LogChunk, *DatabaseError)
 
+	// Delete list of log chunks, primarily used to clean up log chunks after merging and uploading
+	DeleteLogChunksForArtifact(int64) (int64, *DatabaseError)
+
 	GetArtifactByName(bucket string, name string) (*model.Artifact, *DatabaseError)
 
 	GetArtifactById(int64) (*model.Artifact, *DatabaseError)
