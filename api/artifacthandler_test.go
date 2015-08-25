@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"testing"
 
+	"golang.org/x/net/context"
+
 	"gopkg.in/amz.v1/aws"
 	"gopkg.in/amz.v1/s3"
 	"gopkg.in/amz.v1/s3/s3test"
 
+	"github.com/dropbox/changes-artifacts/common/sentry"
 	"github.com/dropbox/changes-artifacts/database"
 	"github.com/dropbox/changes-artifacts/model"
 	"github.com/stretchr/testify/assert"
@@ -330,22 +333,22 @@ func TestMergeLogChunks(t *testing.T) {
 	mockdb := &database.MockDatabase{}
 
 	// Merging log chunks not valid in following states
-	assert.Error(t, MergeLogChunks(&model.Artifact{State: model.WAITING_FOR_UPLOAD}, mockdb, nil))
-	assert.Error(t, MergeLogChunks(&model.Artifact{State: model.APPENDING}, mockdb, nil))
-	assert.Error(t, MergeLogChunks(&model.Artifact{State: model.UPLOADED}, mockdb, nil))
-	assert.Error(t, MergeLogChunks(&model.Artifact{State: model.UPLOADING}, mockdb, nil))
+	assert.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.WAITING_FOR_UPLOAD}, mockdb, nil))
+	assert.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.APPENDING}, mockdb, nil))
+	assert.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.UPLOADED}, mockdb, nil))
+	assert.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.UPLOADING}, mockdb, nil))
 
 	// Closing an empty artifact with no errors
 	mockdb.On("UpdateArtifact", &model.Artifact{
 		State: model.CLOSED_WITHOUT_DATA,
 	}).Return(nil).Once()
-	assert.NoError(t, MergeLogChunks(&model.Artifact{State: model.APPEND_COMPLETE, Size: 0}, mockdb, nil))
+	assert.NoError(t, MergeLogChunks(nil, &model.Artifact{State: model.APPEND_COMPLETE, Size: 0}, mockdb, nil))
 
 	// Closing an empty artifact with db errors
 	mockdb.On("UpdateArtifact", &model.Artifact{
 		State: model.CLOSED_WITHOUT_DATA,
 	}).Return(database.MockDatabaseError()).Once()
-	assert.Error(t, MergeLogChunks(&model.Artifact{State: model.APPEND_COMPLETE, Size: 0}, mockdb, nil))
+	assert.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.APPEND_COMPLETE, Size: 0}, mockdb, nil))
 
 	// ----- BEGIN Closing an artifact with some log chunks
 	// DB Error while updating artifact
@@ -353,7 +356,7 @@ func TestMergeLogChunks(t *testing.T) {
 		State: model.UPLOADING,
 		Size:  10,
 	}).Return(database.MockDatabaseError()).Once()
-	assert.Error(t, MergeLogChunks(&model.Artifact{State: model.APPEND_COMPLETE, Size: 10}, mockdb, nil))
+	assert.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.APPEND_COMPLETE, Size: 10}, mockdb, nil))
 
 	// DB Error while fetching logchunks
 	mockdb.On("UpdateArtifact", &model.Artifact{
@@ -362,7 +365,7 @@ func TestMergeLogChunks(t *testing.T) {
 		Size:  10,
 	}).Return(nil).Once()
 	mockdb.On("ListLogChunksInArtifact", int64(2)).Return(nil, database.MockDatabaseError()).Once()
-	assert.Error(t, MergeLogChunks(&model.Artifact{Id: 2, State: model.APPEND_COMPLETE, Size: 10}, mockdb, nil))
+	assert.Error(t, MergeLogChunks(nil, &model.Artifact{Id: 2, State: model.APPEND_COMPLETE, Size: 10}, mockdb, nil))
 
 	// Stitching chunks and uploading to S3 successfully (but deleting logchunks fail)
 	mockdb.On("UpdateArtifact", &model.Artifact{
@@ -386,13 +389,14 @@ func TestMergeLogChunks(t *testing.T) {
 	}).Return(nil).Once()
 	mockdb.On("DeleteLogChunksForArtifact", int64(2)).Return(int64(0), database.MockDatabaseError()).Once()
 	s3Server, s3Bucket := createS3Bucket(t)
-	assert.NoError(t, MergeLogChunks(&model.Artifact{
-		Id:       2,
-		State:    model.APPEND_COMPLETE,
-		Size:     10,
-		Name:     "TestMergeLogChunks__artifactName",
-		BucketId: "TestMergeLogChunks__bucketName",
-	}, mockdb, s3Bucket))
+	assert.NoError(t, MergeLogChunks(sentry.CreateAndInstallSentryClient(context.TODO(), "", ""),
+		&model.Artifact{
+			Id:       2,
+			State:    model.APPEND_COMPLETE,
+			Size:     10,
+			Name:     "TestMergeLogChunks__artifactName",
+			BucketId: "TestMergeLogChunks__bucketName",
+		}, mockdb, s3Bucket))
 	s3Server.Quit()
 
 	// Stitching chunks and uploading to S3 successfully
@@ -417,7 +421,7 @@ func TestMergeLogChunks(t *testing.T) {
 		Size:     10,
 	}).Return(nil).Once()
 	s3Server, s3Bucket = createS3Bucket(t)
-	assert.NoError(t, MergeLogChunks(&model.Artifact{
+	assert.NoError(t, MergeLogChunks(nil, &model.Artifact{
 		Id:       3,
 		State:    model.APPEND_COMPLETE,
 		Size:     10,

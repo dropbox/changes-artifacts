@@ -61,25 +61,25 @@ func TestCloseBucket(t *testing.T) {
 
 	// If bucket is not currently open, return failure
 	bucket := &model.Bucket{State: model.CLOSED}
-	assert.Error(t, CloseBucket(bucket, mockdb, nil, nil))
+	assert.Error(t, CloseBucket(nil, bucket, mockdb, nil, nil))
 
 	bucket_id := "bucket_id_1"
 
 	// If DB throws error in any step, return failure
 	bucket = &model.Bucket{State: model.OPEN, Id: bucket_id}
 	mockdb.On("UpdateBucket", bucket).Return(database.WrapInternalDatabaseError(fmt.Errorf("foo"))).Once()
-	assert.Error(t, CloseBucket(bucket, mockdb, nil, mockClock))
+	assert.Error(t, CloseBucket(nil, bucket, mockdb, nil, mockClock))
 
 	bucket = &model.Bucket{State: model.OPEN, Id: bucket_id}
 	mockdb.On("UpdateBucket", bucket).Return(nil).Once()
 	mockdb.On("ListArtifactsInBucket", bucket.Id).Return(nil, database.WrapInternalDatabaseError(fmt.Errorf("err"))).Once()
-	assert.Error(t, CloseBucket(bucket, mockdb, nil, mockClock))
+	assert.Error(t, CloseBucket(nil, bucket, mockdb, nil, mockClock))
 
 	// Closing bucket with no artifacts successfully. Verify bucket state and dateclosed.
 	bucket = &model.Bucket{State: model.OPEN, Id: bucket_id}
 	mockdb.On("UpdateBucket", bucket).Return(nil).Once()
 	mockdb.On("ListArtifactsInBucket", bucket.Id).Return([]model.Artifact{}, nil).Once()
-	assert.NoError(t, CloseBucket(bucket, mockdb, nil, mockClock))
+	assert.NoError(t, CloseBucket(nil, bucket, mockdb, nil, mockClock))
 	assert.Equal(t, model.CLOSED, bucket.State)
 	assert.Equal(t, mockClock.Now(), bucket.DateClosed)
 
@@ -89,7 +89,7 @@ func TestCloseBucket(t *testing.T) {
 	mockdb.On("UpdateBucket", bucket).Return(nil).Once()
 	mockdb.On("ListArtifactsInBucket", bucket.Id).Return([]model.Artifact{artifact}, nil).Once()
 
-	assert.NoError(t, CloseBucket(bucket, mockdb, nil, mockClock))
+	assert.NoError(t, CloseBucket(nil, bucket, mockdb, nil, mockClock))
 	assert.Equal(t, model.CLOSED, bucket.State)
 	assert.Equal(t, mockClock.Now(), bucket.DateClosed)
 

@@ -19,12 +19,16 @@ import (
 	"runtime/pprof"
 	"syscall"
 
+	"golang.org/x/net/context"
+
 	"gopkg.in/amz.v1/aws"
 	"gopkg.in/amz.v1/s3"
 	"gopkg.in/gorp.v1"
 
 	"github.com/dropbox/changes-artifacts/api"
 	"github.com/dropbox/changes-artifacts/common"
+	"github.com/dropbox/changes-artifacts/common/reqcontext"
+	"github.com/dropbox/changes-artifacts/common/sentry"
 	"github.com/dropbox/changes-artifacts/database"
 	"github.com/dropbox/changes-artifacts/model"
 	"github.com/go-martini/martini"
@@ -80,11 +84,13 @@ func bindArtifact(w http.ResponseWriter, r render.Render, c martini.Context, par
 
 type config struct {
 	DbConnstr   string
+	Env         string
 	S3Server    string
 	S3Region    string
 	S3Bucket    string
 	S3AccessKey string
 	S3SecretKey string
+	SentryDSN   string
 }
 
 var defaultConfig = config{
@@ -238,6 +244,13 @@ func main() {
 	// Bind real clock implementation
 	m.MapTo(new(common.RealClock), (*common.Clock)(nil))
 
+	// XXX It would be nice to use something like https://github.com/guregu/kami which does all this
+	// in a very nice manner. It will also help us get rid of the crappy dependency injection magic
+	// that is done by Martini. Also, kami/httprouter is supposed to be faster(TM).
+	rootCtx := context.Background()
+	rootCtx = sentry.CreateAndInstallSentryClient(rootCtx, conf.Env, conf.SentryDSN)
+	m.Use(reqcontext.ContextHandler(rootCtx))
+
 	r := martini.NewRouter()
 	// '/' url is used to determine if the server is up. Do not remove.
 	r.Get("/", HomeHandler)
@@ -252,7 +265,7 @@ func main() {
 		br.Group("/artifacts/:artifact_name", func(ar martini.Router) {
 			ar.Get("", api.HandleGetArtifact)
 			ar.Post("", api.PostArtifact)
-			ar.Post("/close", api.FinalizeArtifact)
+			ar.Post("/close", api.HandleCloseArtifact)
 			ar.Get("/content", api.GetArtifactContent)
 		}, bindArtifact)
 	}, bindBucket)

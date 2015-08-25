@@ -14,6 +14,9 @@ import (
 	"strconv"
 	"time"
 
+	"golang.org/x/net/context"
+
+	"github.com/dropbox/changes-artifacts/common/sentry"
 	"github.com/dropbox/changes-artifacts/database"
 	"github.com/dropbox/changes-artifacts/model"
 	"github.com/go-martini/martini"
@@ -210,7 +213,10 @@ func PostArtifact(r render.Render, req *http.Request, db database.Database, s3bu
 	}
 }
 
-func CloseArtifact(artifact *model.Artifact, db database.Database, s3bucket *s3.Bucket, failIfAlreadyClosed bool) error {
+// CloseArtifact closes an artifact for further writes and begins process of merging and uploading
+// the artifact. This operation is only valid for artifacts which are being uploaded in chunks.
+// In all other cases, an error is returned.
+func CloseArtifact(ctx context.Context, artifact *model.Artifact, db database.Database, s3bucket *s3.Bucket, failIfAlreadyClosed bool) error {
 	switch artifact.State {
 	case model.UPLOADED:
 		// Already closed. Nothing to do here.
@@ -225,7 +231,7 @@ func CloseArtifact(artifact *model.Artifact, db database.Database, s3bucket *s3.
 			return err
 		}
 
-		return MergeLogChunks(artifact, db, s3bucket)
+		return MergeLogChunks(ctx, artifact, db, s3bucket)
 
 	case model.WAITING_FOR_UPLOAD:
 		// Streaming artifact was not uploaded
@@ -243,7 +249,7 @@ func CloseArtifact(artifact *model.Artifact, db database.Database, s3bucket *s3.
 
 // Merges all of the individual chunks into a single object and stores it on s3.
 // The log chunks are stored in the database, while the object is uploaded to s3.
-func MergeLogChunks(artifact *model.Artifact, db database.Database, s3bucket *s3.Bucket) error {
+func MergeLogChunks(ctx context.Context, artifact *model.Artifact, db database.Database, s3bucket *s3.Bucket) error {
 	switch artifact.State {
 	case model.APPEND_COMPLETE:
 		// TODO: Reimplement using GorpDatabase
@@ -307,13 +313,12 @@ func MergeLogChunks(artifact *model.Artifact, db database.Database, s3bucket *s3
 			// From this point onwards, we will not send back any errors back to the user. If we are
 			// unable to delete logchunks, we log it to Sentry instead.
 			if n, err := db.DeleteLogChunksForArtifact(artifact.Id); err != nil {
-				// TODO: Send this error to Sentry
-				log.Printf("Error deleting logchunks for artifact %d: %v\n", artifact.Id, err)
+				sentry.ReportError(ctx, err)
 				return nil
 			} else if n != int64(len(logChunks)) {
-				// TODO: Send this error to Sentry
-				log.Printf("Mismatch in number of logchunks while deleting logchunks for artifact %d:"+
-					"Expected: %d Actual: %d\n", artifact.Id, len(logChunks), n)
+				sentry.ReportMessage(ctx,
+					fmt.Sprintf("Mismatch in number of logchunks while deleting logchunks for artifact %d:"+
+						"Expected: %d Actual: %d\n", artifact.Id, len(logChunks), n))
 			}
 
 			return nil
@@ -336,13 +341,14 @@ func MergeLogChunks(artifact *model.Artifact, db database.Database, s3bucket *s3
 	}
 }
 
-func FinalizeArtifact(r render.Render, params martini.Params, db database.Database, s3bucket *s3.Bucket, artifact *model.Artifact) {
+// HandleCloseArtifact handles the HTTP request to close an artifact. See CloseArtifact for details.
+func HandleCloseArtifact(ctx context.Context, r render.Render, params martini.Params, db database.Database, s3bucket *s3.Bucket, artifact *model.Artifact) {
 	if artifact == nil {
 		JsonErrorf(r, http.StatusBadRequest, "Error: no artifact specified")
 		return
 	}
 
-	if err := CloseArtifact(artifact, db, s3bucket, true); err != nil {
+	if err := CloseArtifact(ctx, artifact, db, s3bucket, true); err != nil {
 		r.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("%s", err)})
 		return
 	}

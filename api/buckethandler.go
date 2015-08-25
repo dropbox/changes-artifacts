@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"golang.org/x/net/context"
+
 	"github.com/dropbox/changes-artifacts/common"
 	"github.com/dropbox/changes-artifacts/database"
 	"github.com/dropbox/changes-artifacts/model"
@@ -95,13 +97,14 @@ func HandleGetBucket(r render.Render, bucket *model.Bucket) {
 	r.JSON(http.StatusOK, bucket)
 }
 
-func HandleCloseBucket(r render.Render, db database.Database, bucket *model.Bucket, s3Bucket *s3.Bucket, clk common.Clock) {
+// HandleCloseBucket handles the HTTP request to close a bucket. See CloseBucket for details.
+func HandleCloseBucket(ctx context.Context, r render.Render, db database.Database, bucket *model.Bucket, s3Bucket *s3.Bucket, clk common.Clock) {
 	if bucket == nil {
 		JsonErrorf(r, http.StatusBadRequest, "Error: no bucket specified")
 		return
 	}
 
-	if err := CloseBucket(bucket, db, s3Bucket, clk); err != nil {
+	if err := CloseBucket(ctx, bucket, db, s3Bucket, clk); err != nil {
 		r.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("Error while closing bucket: %s", err)})
 	} else {
 		r.JSON(http.StatusOK, bucket)
@@ -109,7 +112,9 @@ func HandleCloseBucket(r render.Render, db database.Database, bucket *model.Buck
 	return
 }
 
-func CloseBucket(bucket *model.Bucket, db database.Database, s3Bucket *s3.Bucket, clk common.Clock) error {
+// CloseBucket closes a bucket, preventing further updates. All artifacts associated with the bucket
+// are also marked closed. If the bucket is already closed, an error is returned.
+func CloseBucket(ctx context.Context, bucket *model.Bucket, db database.Database, s3Bucket *s3.Bucket, clk common.Clock) error {
 	if bucket.State != model.OPEN {
 		return fmt.Errorf("Bucket is already closed")
 	}
@@ -124,7 +129,7 @@ func CloseBucket(bucket *model.Bucket, db database.Database, s3Bucket *s3.Bucket
 		return err
 	} else {
 		for _, artifact := range artifacts {
-			if err := CloseArtifact(&artifact, db, s3Bucket, false); err != nil {
+			if err := CloseArtifact(ctx, &artifact, db, s3Bucket, false); err != nil {
 				return err
 			}
 		}
