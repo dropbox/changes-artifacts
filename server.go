@@ -29,6 +29,7 @@ import (
 	"github.com/dropbox/changes-artifacts/common"
 	"github.com/dropbox/changes-artifacts/common/reqcontext"
 	"github.com/dropbox/changes-artifacts/common/sentry"
+	"github.com/dropbox/changes-artifacts/common/stats"
 	"github.com/dropbox/changes-artifacts/database"
 	"github.com/dropbox/changes-artifacts/model"
 	"github.com/go-martini/martini"
@@ -250,10 +251,12 @@ func main() {
 	rootCtx := context.Background()
 	rootCtx = sentry.CreateAndInstallSentryClient(rootCtx, conf.Env, conf.SentryDSN)
 	m.Use(reqcontext.ContextHandler(rootCtx))
+	m.Use(stats.Counter())
 
 	r := martini.NewRouter()
 	// '/' url is used to determine if the server is up. Do not remove.
 	r.Get("/", HomeHandler)
+	r.Get("/stats", stats.Handler)
 	r.Get("/version", VersionHandler)
 	r.Get("/buckets", api.ListBuckets)
 	r.Post("/buckets", api.HandleCreateBucket)
