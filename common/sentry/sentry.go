@@ -1,13 +1,16 @@
 package sentry
 
 import (
+	"fmt"
 	"log"
+	"net/http"
 
 	"golang.org/x/net/context"
 
 	"github.com/dropbox/changes-artifacts/common"
 	"github.com/dropbox/changes-artifacts/common/reqcontext"
 	"github.com/getsentry/raven-go"
+	"github.com/go-martini/martini"
 )
 
 // getSentryClient returns a reporter which logs to Sentry if sentryDsn is provided.
@@ -36,8 +39,6 @@ const errReporterKey key = 0
 
 // CreateAndInstallSentryClient installs a Sentry client to the supplied context.
 // If an empty dsn is provided, the installed client will be nil.
-//
-// Panics if creating sentry client fails.
 func CreateAndInstallSentryClient(ctx context.Context, env string, dsn string) context.Context {
 	sentryClient := getSentryClient(env, dsn)
 	if sentryClient != nil {
@@ -97,5 +98,24 @@ func reportMessage(ctx context.Context, sentryClient *raven.Client, msg string) 
 		}
 	} else {
 		log.Printf("[Sentry Message] %s\n", msg)
+	}
+}
+
+// PanicHandler intercepts panic's from request handlers and sends them to Sentry.
+// Exception is re-panic'd to be handled up the chain.
+func PanicHandler() martini.Handler {
+	return func(res http.ResponseWriter, req *http.Request, ctx context.Context, c martini.Context) {
+		defer func() {
+			if e := recover(); e != nil {
+				log.Printf("Caught exception %v\n", e)
+				if err, ok := e.(error); ok {
+					ReportError(ctx, err)
+				} else {
+					ReportMessage(ctx, fmt.Sprintf("Caught error %s", e))
+				}
+				panic(e)
+			}
+		}()
+		c.Next()
 	}
 }

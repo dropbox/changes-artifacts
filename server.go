@@ -252,6 +252,7 @@ func main() {
 	rootCtx = sentry.CreateAndInstallSentryClient(rootCtx, conf.Env, conf.SentryDSN)
 	m.Use(reqcontext.ContextHandler(rootCtx))
 	m.Use(stats.Counter())
+	m.Use(sentry.PanicHandler())
 
 	r := martini.NewRouter()
 	// '/' url is used to determine if the server is up. Do not remove.
