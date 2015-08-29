@@ -13,7 +13,6 @@ type request struct {
 	responseCode  int
 	responseBytes string
 	shouldHang    bool
-	next          *request
 }
 
 // TestServer wraps around httptest.Server to support expectations and timeout tests.
@@ -22,7 +21,7 @@ type request struct {
 //
 // Currently, parallel requests are not supported.
 type TestServer struct {
-	reqChain     *request
+	reqChain     []request
 	t            *testing.T
 	s            *httptest.Server
 	URL          string
@@ -65,32 +64,32 @@ func (ts *TestServer) ExpectAndHang(method string, url string) *TestServer {
 func (ts *TestServer) insertNextReq(nextReq request) *TestServer {
 	defer ts.reqChainLock.Unlock()
 	ts.reqChainLock.Lock()
-
-	if ts.reqChain == nil {
-		ts.reqChain = &nextReq
-	} else {
-		req := ts.reqChain
-
-		for req.next != nil {
-			req = req.next
-		}
-
-		req.next = &nextReq
-	}
+	ts.reqChain = append(ts.reqChain, nextReq)
 
 	return ts
+}
+
+func (ts *TestServer) popNextReq() (nextReq request, ok bool) {
+	defer ts.reqChainLock.Unlock()
+	ts.reqChainLock.Lock()
+
+	if len(ts.reqChain) > 0 {
+		nextReq, ts.reqChain = ts.reqChain[0], ts.reqChain[1:]
+		ok = true
+	} else {
+		ok = false
+	}
+
+	return
 }
 
 func (ts *TestServer) run() {
 	ts.s = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ts.t.Logf("Received request: %s %s\n", r.Method, r.URL)
 
-		ts.reqChainLock.Lock()
-		nextReq := ts.reqChain
-		ts.reqChain = ts.reqChain.next
-		ts.reqChainLock.Unlock()
+		nextReq, ok := ts.popNextReq()
 
-		if nextReq == nil {
+		if !ok {
 			w.WriteHeader(http.StatusExpectationFailed)
 			ts.t.Errorf("Unexpected request %s %s\n", r.Method, r.URL)
 			return
@@ -121,9 +120,9 @@ func (ts *TestServer) run() {
 // remaining expectations will flag a test error.
 func (ts *TestServer) CloseAndAssertExpectations() {
 	ts.reqChainLock.Lock()
-	if ts.reqChain != nil {
+	if len(ts.reqChain) != 0 {
 		ts.t.Errorf("Some expected requests were never called, next one being %s %s",
-			ts.reqChain.method, ts.reqChain.url)
+			ts.reqChain[0].method, ts.reqChain[0].url)
 	}
 	ts.reqChainLock.Unlock()
 
