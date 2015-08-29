@@ -17,6 +17,9 @@ import (
 
 const MAX_PENDING_REPORTS = 100
 
+// Default timeout for any HTTP requests. On timeout, mark the operation as failed, but retriable.
+const DefaultReqTimeout = 30 * time.Second
+
 type ArtifactsError struct {
 	errStr    string
 	retriable bool
@@ -47,17 +50,23 @@ func NewTerminalErrorf(format string, args ...interface{}) *ArtifactsError {
 }
 
 type ArtifactStoreClient struct {
-	server string
+	server     string
+	httpClient *http.Client
 }
 
 func NewArtifactStoreClient(serverURL string) *ArtifactStoreClient {
-	return &ArtifactStoreClient{server: serverURL}
+	return NewArtifactStoreClientWithTimeout(serverURL, DefaultReqTimeout)
 }
 
-func getApiJson(url string) (io.ReadCloser, *ArtifactsError) {
+// NewArtifactStoreClientWithTimeout creates a new client with explicit per-request timeout
+func NewArtifactStoreClientWithTimeout(serverURL string, timeout time.Duration) *ArtifactStoreClient {
+	return &ArtifactStoreClient{server: serverURL, httpClient: &http.Client{Timeout: timeout}}
+}
+
+func getAPIJSON(httpClient *http.Client, url string) (io.ReadCloser, *ArtifactsError) {
 	// XXX until we use a real logging system, this is too verbose
 	// log.Printf("[artifactsclient] GET %s\n", url)
-	if resp, err := http.Get(url); err != nil {
+	if resp, err := httpClient.Get(url); err != nil {
 		return nil, NewRetriableError(err.Error())
 	} else {
 		if resp.StatusCode != http.StatusOK {
@@ -67,14 +76,16 @@ func getApiJson(url string) (io.ReadCloser, *ArtifactsError) {
 	}
 }
 
-func postApiJson(url string, params map[string]interface{}) (io.ReadCloser, *ArtifactsError) {
+func postAPIJSON(httpClient *http.Client, url string, params map[string]interface{}) (io.ReadCloser, *ArtifactsError) {
 	// XXX until we use a real logging system, this is too verbose
 	// log.Printf("[artifactsclient] POST %s\n", url)
 	if mJson, err := json.Marshal(params); err != nil {
 		// Marshalling is deterministic so we can't retry in this scenario.
 		return nil, NewTerminalError(err.Error())
-	} else if resp, err := http.Post(url, "application/json", bytes.NewReader(mJson)); err != nil {
-		return nil, NewTerminalErrorf(err.Error())
+	} else if resp, err := httpClient.Post(url, "application/json", bytes.NewReader(mJson)); err != nil {
+		// If there was an error connecting to the server, it is likely to be transient and should be
+		// retried.
+		return nil, NewRetriableError(err.Error())
 	} else {
 		if resp.StatusCode != http.StatusOK {
 			return nil, determineResponseError(resp, url, "POST")
@@ -139,18 +150,28 @@ func determineResponseError(resp *http.Response, url string, method string) *Art
 }
 
 func (c *ArtifactStoreClient) GetBucket(bucketName string) (*Bucket, *ArtifactsError) {
-	body, err := getApiJson(c.server + "/buckets/" + bucketName)
+	body, err := getAPIJSON(c.httpClient, c.server+"/buckets/"+bucketName)
 
 	if err != nil {
 		return nil, err
 	}
 
-	return c.parseBucketFromResponse(body)
+	bucket, e := c.parseBucketFromResponse(body)
+
+	if e != nil {
+		return nil, e
+	}
+
+	if bucket.bucket.Id != bucketName {
+		return nil, NewTerminalError("Bucket created with wrong name")
+	}
+
+	return bucket, nil
 }
 
 // XXX deadlineMins is not used. Is this planned for something?
 func (c *ArtifactStoreClient) NewBucket(bucketName string, owner string, deadlineMins int) (*Bucket, *ArtifactsError) {
-	body, err := postApiJson(c.server+"/buckets/", map[string]interface{}{
+	body, err := postAPIJSON(c.httpClient, c.server+"/buckets/", map[string]interface{}{
 		"id":    bucketName,
 		"owner": owner,
 	})
@@ -159,7 +180,16 @@ func (c *ArtifactStoreClient) NewBucket(bucketName string, owner string, deadlin
 		return nil, err
 	}
 
-	return c.parseBucketFromResponse(body)
+	bucket, err := c.parseBucketFromResponse(body)
+	if err != nil {
+		return nil, err
+	}
+
+	if bucket.bucket.Id != bucketName {
+		return nil, NewTerminalError("Bucket created with wrong name")
+	}
+
+	return bucket, err
 }
 
 type Bucket struct {
@@ -189,7 +219,7 @@ func (b *Bucket) parseArtifactFromResponse(body io.ReadCloser) (Artifact, *Artif
 // acts as an id for the artifact. Because of additional overhead if the size is
 // already known then `NewStreamedArtifact` may be more applicable.
 func (b *Bucket) NewChunkedArtifact(name string) (*ChunkedArtifact, *ArtifactsError) {
-	body, err := postApiJson(b.client.server+"/buckets/"+b.bucket.Id+"/artifacts", map[string]interface{}{
+	body, err := postAPIJSON(b.client.httpClient, b.client.server+"/buckets/"+b.bucket.Id+"/artifacts", map[string]interface{}{
 		"chunked": true,
 		"name":    name,
 	})
@@ -211,7 +241,7 @@ func (b *Bucket) NewChunkedArtifact(name string) (*ChunkedArtifact, *ArtifactsEr
 // and size. The artifact will only be complete when the server has received exactly
 // "size" bytes. This is only suitable for static content such as files.
 func (b *Bucket) NewStreamedArtifact(name string, size int64) (*StreamedArtifact, *ArtifactsError) {
-	body, err := postApiJson(b.client.server+"/buckets/"+b.bucket.Id+"/artifacts", map[string]interface{}{
+	body, err := postAPIJSON(b.client.httpClient, b.client.server+"/buckets/"+b.bucket.Id+"/artifacts", map[string]interface{}{
 		"chunked": false,
 		"name":    name,
 		"size":    size,
@@ -227,13 +257,17 @@ func (b *Bucket) NewStreamedArtifact(name string, size int64) (*StreamedArtifact
 		return nil, err
 	}
 
+	if artifact.GetArtifactModel().Name != name {
+		return nil, NewTerminalError("Streaming artifact created with wrong name")
+	}
+
 	return &StreamedArtifact{
 		ArtifactImpl: artifact.(*ArtifactImpl),
 	}, nil
 }
 
 func (b *Bucket) GetArtifact(name string) (Artifact, *ArtifactsError) {
-	body, err := getApiJson(b.client.server + "/buckets/" + b.bucket.Id + "/artifacts/" + name)
+	body, err := getAPIJSON(b.client.httpClient, b.client.server+"/buckets/"+b.bucket.Id+"/artifacts/"+name)
 
 	if err != nil {
 		return nil, err
@@ -243,7 +277,7 @@ func (b *Bucket) GetArtifact(name string) (Artifact, *ArtifactsError) {
 }
 
 func (b *Bucket) ListArtifacts() ([]Artifact, *ArtifactsError) {
-	body, err := getApiJson(b.client.server + "/buckets/" + b.bucket.Id + "/artifacts/")
+	body, err := getAPIJSON(b.client.httpClient, b.client.server+"/buckets/"+b.bucket.Id+"/artifacts/")
 	if err != nil {
 		return nil, NewRetriableError(err.Error())
 	}
@@ -275,7 +309,7 @@ func (b *Bucket) parseArtifactListFromResponse(body io.ReadCloser) ([]Artifact, 
 }
 
 func (b *Bucket) Close() *ArtifactsError {
-	_, err := postApiJson(b.client.server+"/buckets/"+b.bucket.Id+"/close", map[string]interface{}{})
+	_, err := postAPIJSON(b.client.httpClient, b.client.server+"/buckets/"+b.bucket.Id+"/close", map[string]interface{}{})
 	return err
 }
 
@@ -352,7 +386,8 @@ type StreamedArtifact struct {
 
 func newTicker() *backoff.Ticker {
 	b := backoff.NewExponentialBackOff()
-	b.MaxInterval = 15 * time.Second
+	b.MaxInterval = 5 * time.Second
+	b.MaxElapsedTime = 15 * time.Second
 
 	return backoff.NewTicker(b)
 }
@@ -362,7 +397,7 @@ func (artifact *ChunkedArtifact) pushLogChunks() {
 	for logChunk := range artifact.stringStream {
 		ticker := newTicker()
 		for _ = range ticker.C {
-			_, err = postApiJson(fmt.Sprintf("%s/buckets/%s/artifacts/%s", artifact.bucket.client.server, artifact.bucket.bucket.Id, artifact.artifact.Name), map[string]interface{}{
+			_, err = postAPIJSON(artifact.bucket.client.httpClient, fmt.Sprintf("%s/buckets/%s/artifacts/%s", artifact.bucket.client.server, artifact.bucket.bucket.Id, artifact.artifact.Name), map[string]interface{}{
 				"size":       len(logChunk),
 				"content":    logChunk,
 				"byteoffset": artifact.offset,
@@ -412,7 +447,7 @@ func (a *ChunkedArtifact) Close() *ArtifactsError {
 		return err
 	}
 
-	_, err := postApiJson(a.bucket.client.server+"/buckets/"+a.bucket.bucket.Id+"/artifacts/"+a.artifact.Name+"/close", map[string]interface{}{})
+	_, err := postAPIJSON(a.bucket.client.httpClient, a.bucket.client.server+"/buckets/"+a.bucket.bucket.Id+"/artifacts/"+a.artifact.Name+"/close", map[string]interface{}{})
 	return err
 }
 
