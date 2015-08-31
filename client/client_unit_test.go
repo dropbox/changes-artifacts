@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/net/context"
+
 	"github.com/dropbox/changes-artifacts/client/testserver"
 	"github.com/stretchr/testify/assert"
 )
@@ -230,8 +232,7 @@ func testErrorCombinations(t *testing.T,
 		// Proxy/server hangs and times out
 		ts := testserver.NewTestServer(t)
 		defer ts.CloseAndAssertExpectations()
-
-		client := NewArtifactStoreClientWithTimeout(ts.URL, 100*time.Millisecond)
+		client := NewArtifactStoreClientWithContext(ts.URL, 100*time.Millisecond, context.Background())
 		obj := prerun(ts, client)
 		ts.ExpectAndHang(method, url)
 
@@ -239,5 +240,156 @@ func testErrorCombinations(t *testing.T,
 		assert.Nil(t, op)
 		assert.Error(t, err)
 		assert.True(t, err.IsRetriable(), "Error %s should be retriable", err)
+	}
+}
+
+func TestUploadLogChunksAndFlushSuccessfully(t *testing.T) {
+	ts := testserver.NewTestServer(t)
+	defer ts.CloseAndAssertExpectations()
+
+	client := NewArtifactStoreClient(ts.URL)
+
+	ts.ExpectAndRespond("POST", "/buckets/", http.StatusOK, `{"Id": "foo"}`)
+	ts.ExpectAndRespond("POST", "/buckets/foo/artifacts", http.StatusOK, `{"Name": "artifact"}`)
+
+	b, _ := client.NewBucket("foo", "bar", 32)
+	sa, err := b.NewChunkedArtifact("artifact")
+	assert.NotNil(t, sa)
+	assert.NoError(t, err)
+
+	{
+		// Content request might come later, even as late as Flush()
+		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact", 200, `{}`)
+		err := sa.AppendLog("console contents")
+		assert.NoError(t, err)
+	}
+
+	{
+		// Content request might come later, even as late as Flush()
+		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact", 200, `{}`)
+		err := sa.AppendLog("more console contents")
+		assert.NoError(t, err)
+	}
+
+	{
+		err := sa.Flush()
+		assert.NoError(t, err)
+	}
+}
+
+func TestUploadLogChunksAndCloseSuccessfully(t *testing.T) {
+	ts := testserver.NewTestServer(t)
+	defer ts.CloseAndAssertExpectations()
+
+	client := NewArtifactStoreClient(ts.URL)
+
+	ts.ExpectAndRespond("POST", "/buckets/", http.StatusOK, `{"Id": "foo"}`)
+	ts.ExpectAndRespond("POST", "/buckets/foo/artifacts", http.StatusOK, `{"Name": "artifact"}`)
+
+	b, _ := client.NewBucket("foo", "bar", 32)
+	sa, err := b.NewChunkedArtifact("artifact")
+	assert.NotNil(t, sa)
+	assert.NoError(t, err)
+
+	{
+		// Content request might come later, even as late as Flush()
+		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact", 200, `{}`)
+		err := sa.AppendLog("console contents")
+		assert.NoError(t, err)
+	}
+
+	{
+		// Content request might come later, even as late as Flush()
+		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact", 200, `{}`)
+		err := sa.AppendLog("more console contents")
+		assert.NoError(t, err)
+	}
+
+	{
+		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact/close", 200, `{}`)
+		err := sa.Close()
+		assert.NoError(t, err)
+	}
+}
+
+func TestPushLogChunkServerSucceedOnRetry(t *testing.T) {
+	ts := testserver.NewTestServer(t)
+	defer ts.CloseAndAssertExpectations()
+
+	client := NewArtifactStoreClient(ts.URL)
+
+	ts.ExpectAndRespond("POST", "/buckets/", http.StatusOK, `{"Id": "foo"}`)
+	ts.ExpectAndRespond("POST", "/buckets/foo/artifacts", http.StatusOK, `{"Name": "artifact"}`)
+
+	b, _ := client.NewBucket("foo", "bar", 32)
+	sa, err := b.NewChunkedArtifact("artifact")
+	assert.NotNil(t, sa)
+	assert.NoError(t, err)
+
+	{
+		// Fail with a retriable error first
+		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact", 500, `{}`)
+		// Then succeed on retry
+		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact", 200, `{}`)
+		err := sa.AppendLog("console contents")
+		assert.NoError(t, err)
+	}
+
+	{
+		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact/close", 200, `{}`)
+		err := sa.Close()
+		assert.NoError(t, err)
+	}
+}
+
+func TestPushLogChunkServerFailWithTerminalError(t *testing.T) {
+	ts := testserver.NewTestServer(t)
+	defer ts.CloseAndAssertExpectations()
+
+	client := NewArtifactStoreClientWithContext(ts.URL, 100*time.Millisecond, context.Background())
+
+	ts.ExpectAndRespond("POST", "/buckets/", http.StatusOK, `{"Id": "foo"}`)
+	ts.ExpectAndRespond("POST", "/buckets/foo/artifacts", http.StatusOK, `{"Name": "artifact"}`)
+
+	b, _ := client.NewBucket("foo", "bar", 32)
+	sa, err := b.NewChunkedArtifact("artifact")
+	assert.NotNil(t, sa)
+	assert.NoError(t, err)
+
+	{
+		// Fail with a terminal error
+		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact", 400, `{}`)
+		err := sa.AppendLog("console contents")
+		assert.NoError(t, err)
+		err = sa.Close()
+		assert.Error(t, err)
+		assert.False(t, err.IsRetriable())
+	}
+}
+
+func TestPushLogChunkCancelledContext(t *testing.T) {
+	ts := testserver.NewTestServer(t)
+	defer ts.CloseAndAssertExpectations()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	client := NewArtifactStoreClientWithContext(ts.URL, 100*time.Millisecond, ctx)
+
+	ts.ExpectAndRespond("POST", "/buckets/", http.StatusOK, `{"Id": "foo"}`)
+	ts.ExpectAndRespond("POST", "/buckets/foo/artifacts", http.StatusOK, `{"Name": "artifact"}`)
+
+	b, _ := client.NewBucket("foo", "bar", 32)
+	sa, err := b.NewChunkedArtifact("artifact")
+	assert.NotNil(t, sa)
+	assert.NoError(t, err)
+
+	// Cancel the context to prevent any further requests
+	cancel()
+
+	{
+		err := sa.AppendLog("console contents")
+		assert.NoError(t, err)
+		err = sa.Close()
+		assert.Error(t, err)
+		assert.False(t, err.IsRetriable())
 	}
 }

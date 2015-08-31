@@ -91,14 +91,12 @@ func (ts *TestServer) run() {
 
 		if !ok {
 			w.WriteHeader(http.StatusExpectationFailed)
-			ts.t.Errorf("Unexpected request %s %s\n", r.Method, r.URL)
-			return
+			ts.t.Fatalf("Unexpected request %s %s\n", r.Method, r.URL)
 		}
 
 		if nextReq.method != r.Method || nextReq.url != r.URL.String() {
 			w.WriteHeader(http.StatusExpectationFailed)
-			ts.t.Errorf("Expected request: %s %s\nGot request: %s %s", nextReq.method, nextReq.url, r.Method, r.URL)
-			return
+			ts.t.Fatalf("Expected request: %s %s\nGot request: %s %s", nextReq.method, nextReq.url, r.Method, r.URL)
 		}
 
 		if nextReq.shouldHang {
@@ -120,11 +118,11 @@ func (ts *TestServer) run() {
 // remaining expectations will flag a test error.
 func (ts *TestServer) CloseAndAssertExpectations() {
 	ts.reqChainLock.Lock()
+	defer ts.reqChainLock.Unlock()
 	if len(ts.reqChain) != 0 {
-		ts.t.Errorf("Some expected requests were never called, next one being %s %s",
+		ts.t.Fatalf("Some expected requests were never called, next one being %s %s",
 			ts.reqChain[0].method, ts.reqChain[0].url)
 	}
-	ts.reqChainLock.Unlock()
 
 	ts.waiter.L.Lock()
 	ts.waiter.Broadcast()

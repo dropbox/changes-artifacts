@@ -11,6 +11,9 @@ import (
 	"net/http"
 	"time"
 
+	"golang.org/x/net/context"
+	"golang.org/x/net/context/ctxhttp"
+
 	"github.com/cenkalti/backoff"
 	"github.com/dropbox/changes-artifacts/model"
 )
@@ -50,23 +53,27 @@ func NewTerminalErrorf(format string, args ...interface{}) *ArtifactsError {
 }
 
 type ArtifactStoreClient struct {
-	server     string
-	httpClient *http.Client
+	server  string
+	ctx     context.Context
+	timeout time.Duration
 }
 
 func NewArtifactStoreClient(serverURL string) *ArtifactStoreClient {
-	return NewArtifactStoreClientWithTimeout(serverURL, DefaultReqTimeout)
+	return NewArtifactStoreClientWithContext(serverURL, DefaultReqTimeout, context.TODO())
 }
 
-// NewArtifactStoreClientWithTimeout creates a new client with explicit per-request timeout
-func NewArtifactStoreClientWithTimeout(serverURL string, timeout time.Duration) *ArtifactStoreClient {
-	return &ArtifactStoreClient{server: serverURL, httpClient: &http.Client{Timeout: timeout}}
+// NewArtifactStoreClientWithContext creates a new client with given context and per-request
+// timeout.
+func NewArtifactStoreClientWithContext(serverURL string, timeout time.Duration, ctx context.Context) *ArtifactStoreClient {
+	return &ArtifactStoreClient{server: serverURL, timeout: timeout, ctx: ctx}
 }
 
-func getAPIJSON(httpClient *http.Client, url string) (io.ReadCloser, *ArtifactsError) {
-	// XXX until we use a real logging system, this is too verbose
-	// log.Printf("[artifactsclient] GET %s\n", url)
-	if resp, err := httpClient.Get(url); err != nil {
+func (c *ArtifactStoreClient) getAPI(path string) (io.ReadCloser, *ArtifactsError) {
+	url := c.server + path
+	ctx, cancel := context.WithTimeout(c.ctx, c.timeout)
+	defer cancel()
+
+	if resp, err := ctxhttp.Get(ctx, nil, url); err != nil {
 		return nil, NewRetriableError(err.Error())
 	} else {
 		if resp.StatusCode != http.StatusOK {
@@ -76,13 +83,22 @@ func getAPIJSON(httpClient *http.Client, url string) (io.ReadCloser, *ArtifactsE
 	}
 }
 
-func postAPIJSON(httpClient *http.Client, url string, params map[string]interface{}) (io.ReadCloser, *ArtifactsError) {
-	// XXX until we use a real logging system, this is too verbose
-	// log.Printf("[artifactsclient] POST %s\n", url)
-	if mJson, err := json.Marshal(params); err != nil {
+func (c *ArtifactStoreClient) postAPIJSON(path string, params map[string]interface{}) (io.ReadCloser, *ArtifactsError) {
+	mJSON, err := json.Marshal(params)
+	if err != nil {
 		// Marshalling is deterministic so we can't retry in this scenario.
 		return nil, NewTerminalError(err.Error())
-	} else if resp, err := httpClient.Post(url, "application/json", bytes.NewReader(mJson)); err != nil {
+	}
+
+	return c.postAPI(path, "application/json", bytes.NewReader(mJSON))
+}
+
+func (c *ArtifactStoreClient) postAPI(path string, contentType string, body io.Reader) (io.ReadCloser, *ArtifactsError) {
+	url := c.server + path
+	ctx, cancel := context.WithTimeout(c.ctx, c.timeout)
+	defer cancel()
+
+	if resp, err := ctxhttp.Post(ctx, nil, url, contentType, body); err != nil {
 		// If there was an error connecting to the server, it is likely to be transient and should be
 		// retried.
 		return nil, NewRetriableError(err.Error())
@@ -150,7 +166,7 @@ func determineResponseError(resp *http.Response, url string, method string) *Art
 }
 
 func (c *ArtifactStoreClient) GetBucket(bucketName string) (*Bucket, *ArtifactsError) {
-	body, err := getAPIJSON(c.httpClient, c.server+"/buckets/"+bucketName)
+	body, err := c.getAPI(fmt.Sprintf("/buckets/%s", bucketName))
 
 	if err != nil {
 		return nil, err
@@ -171,7 +187,7 @@ func (c *ArtifactStoreClient) GetBucket(bucketName string) (*Bucket, *ArtifactsE
 
 // XXX deadlineMins is not used. Is this planned for something?
 func (c *ArtifactStoreClient) NewBucket(bucketName string, owner string, deadlineMins int) (*Bucket, *ArtifactsError) {
-	body, err := postAPIJSON(c.httpClient, c.server+"/buckets/", map[string]interface{}{
+	body, err := c.postAPIJSON("/buckets/", map[string]interface{}{
 		"id":    bucketName,
 		"owner": owner,
 	})
@@ -219,7 +235,7 @@ func (b *Bucket) parseArtifactFromResponse(body io.ReadCloser) (Artifact, *Artif
 // acts as an id for the artifact. Because of additional overhead if the size is
 // already known then `NewStreamedArtifact` may be more applicable.
 func (b *Bucket) NewChunkedArtifact(name string) (*ChunkedArtifact, *ArtifactsError) {
-	body, err := postAPIJSON(b.client.httpClient, b.client.server+"/buckets/"+b.bucket.Id+"/artifacts", map[string]interface{}{
+	body, err := b.client.postAPIJSON(fmt.Sprintf("/buckets/%s/artifacts", b.bucket.Id), map[string]interface{}{
 		"chunked": true,
 		"name":    name,
 	})
@@ -241,7 +257,7 @@ func (b *Bucket) NewChunkedArtifact(name string) (*ChunkedArtifact, *ArtifactsEr
 // and size. The artifact will only be complete when the server has received exactly
 // "size" bytes. This is only suitable for static content such as files.
 func (b *Bucket) NewStreamedArtifact(name string, size int64) (*StreamedArtifact, *ArtifactsError) {
-	body, err := postAPIJSON(b.client.httpClient, b.client.server+"/buckets/"+b.bucket.Id+"/artifacts", map[string]interface{}{
+	body, err := b.client.postAPIJSON(fmt.Sprintf("/buckets/%s/artifacts", b.bucket.Id), map[string]interface{}{
 		"chunked": false,
 		"name":    name,
 		"size":    size,
@@ -267,7 +283,7 @@ func (b *Bucket) NewStreamedArtifact(name string, size int64) (*StreamedArtifact
 }
 
 func (b *Bucket) GetArtifact(name string) (Artifact, *ArtifactsError) {
-	body, err := getAPIJSON(b.client.httpClient, b.client.server+"/buckets/"+b.bucket.Id+"/artifacts/"+name)
+	body, err := b.client.getAPI(fmt.Sprintf("/buckets/%s/artifacts/%s", b.bucket.Id, name))
 
 	if err != nil {
 		return nil, err
@@ -277,9 +293,9 @@ func (b *Bucket) GetArtifact(name string) (Artifact, *ArtifactsError) {
 }
 
 func (b *Bucket) ListArtifacts() ([]Artifact, *ArtifactsError) {
-	body, err := getAPIJSON(b.client.httpClient, b.client.server+"/buckets/"+b.bucket.Id+"/artifacts/")
+	body, err := b.client.getAPI(fmt.Sprintf("/buckets/%s/artifacts/", b.bucket.Id))
 	if err != nil {
-		return nil, NewRetriableError(err.Error())
+		return nil, err
 	}
 
 	return b.parseArtifactListFromResponse(body)
@@ -309,7 +325,7 @@ func (b *Bucket) parseArtifactListFromResponse(body io.ReadCloser) ([]Artifact, 
 }
 
 func (b *Bucket) Close() *ArtifactsError {
-	_, err := postAPIJSON(b.client.httpClient, b.client.server+"/buckets/"+b.bucket.Id+"/close", map[string]interface{}{})
+	_, err := b.client.postAPIJSON(fmt.Sprintf("/buckets/%s/close", b.bucket.Id), map[string]interface{}{})
 	return err
 }
 
@@ -366,10 +382,11 @@ func (artifact *ChunkedArtifact) Flush() *ArtifactsError {
 	close(artifact.stringStream)
 
 	select {
+	case <-artifact.bucket.client.ctx.Done():
+		return NewTerminalError(artifact.bucket.client.ctx.Err().Error())
 	case err := <-artifact.fatalErr:
 		return err
 	case _ = <-artifact.complete:
-
 		// Recreate the stream and start pushing again.
 		artifact.stringStream = make(chan string, MAX_PENDING_REPORTS)
 		go artifact.pushLogChunks()
@@ -386,6 +403,7 @@ type StreamedArtifact struct {
 
 func newTicker() *backoff.Ticker {
 	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = 100 * time.Millisecond
 	b.MaxInterval = 5 * time.Second
 	b.MaxElapsedTime = 15 * time.Second
 
@@ -396,15 +414,36 @@ func (artifact *ChunkedArtifact) pushLogChunks() {
 	var err *ArtifactsError
 	for logChunk := range artifact.stringStream {
 		ticker := newTicker()
-		for _ = range ticker.C {
-			_, err = postAPIJSON(artifact.bucket.client.httpClient, fmt.Sprintf("%s/buckets/%s/artifacts/%s", artifact.bucket.client.server, artifact.bucket.bucket.Id, artifact.artifact.Name), map[string]interface{}{
+		for {
+			// If our parent context has been cancelled, we discard state and get out.
+			select {
+			case <-ticker.C:
+			case <-artifact.bucket.client.ctx.Done():
+				log.Println("Client context has closed during log upload. Bailing out without any further log upload operations.")
+				ticker.Stop()
+				return
+			}
+
+			_, err = artifact.bucket.client.postAPIJSON(fmt.Sprintf("/buckets/%s/artifacts/%s", artifact.bucket.bucket.Id, artifact.artifact.Name), map[string]interface{}{
 				"size":       len(logChunk),
 				"content":    logChunk,
 				"byteoffset": artifact.offset,
 			})
 
 			if err != nil {
-				continue
+				if err.IsRetriable() {
+					// Let's retry the request after a backoff
+					continue
+				} else {
+					// This either means the server lost some of our logchunks (because of a rollback), or a
+					// proxy timeout caused the previous request to succeed at the server but the proxy
+					// returned an error.
+					//
+					// TODO: We should try to salvage the situation by seeing if we can skip a logchunk.
+					// For now, bail.
+					artifact.fatalErr <- err
+					return
+				}
 			}
 
 			artifact.offset += len(logChunk)
@@ -430,16 +469,11 @@ func (artifact *ChunkedArtifact) AppendLog(chunk string) *ArtifactsError {
 }
 
 func (a *StreamedArtifact) UploadArtifact(stream io.Reader) *ArtifactsError {
-	url := fmt.Sprintf("%s/buckets/%s/artifacts/%s", a.bucket.client.server, a.bucket.bucket.Id, a.artifact.Name)
-	log.Printf("[artifactsclient] POST %s\n", url)
-	if resp, err := http.Post(url, "application/octet-stream", stream); err != nil {
-		return NewTerminalErrorf(err.Error())
-	} else {
-		if resp.StatusCode != http.StatusOK {
-			return determineResponseError(resp, url, "POST")
-		}
-		return nil
-	}
+	url := fmt.Sprintf("/buckets/%s/artifacts/%s", a.bucket.bucket.Id, a.artifact.Name)
+	_, err := a.bucket.client.postAPI(url, "application/octet-stream", stream)
+
+	// TODO: Verify that the artifact that was stored matches the one we just uploaded.
+	return err
 }
 
 func (a *ChunkedArtifact) Close() *ArtifactsError {
@@ -447,19 +481,11 @@ func (a *ChunkedArtifact) Close() *ArtifactsError {
 		return err
 	}
 
-	_, err := postAPIJSON(a.bucket.client.httpClient, a.bucket.client.server+"/buckets/"+a.bucket.bucket.Id+"/artifacts/"+a.artifact.Name+"/close", map[string]interface{}{})
+	_, err := a.bucket.client.postAPIJSON(fmt.Sprintf("/buckets/%s/artifacts/%s/close", a.bucket.bucket.Id, a.artifact.Name), map[string]interface{}{})
 	return err
 }
 
 func (a ArtifactImpl) GetContent() (io.ReadCloser, *ArtifactsError) {
-	url := fmt.Sprintf("%s/buckets/%s/artifacts/%s/content",
-		a.bucket.client.server, a.bucket.bucket.Id, a.artifact.Name)
-	if resp, err := http.Get(url); err != nil {
-		return nil, NewRetriableError(err.Error())
-	} else {
-		if resp.StatusCode != http.StatusOK {
-			return nil, determineResponseError(resp, url, "GET")
-		}
-		return resp.Body, nil
-	}
+	url := fmt.Sprintf("/buckets/%s/artifacts/%s/content", a.bucket.bucket.Id, a.artifact.Name)
+	return a.bucket.client.getAPI(url)
 }
