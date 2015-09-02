@@ -86,14 +86,16 @@ func bindArtifact(w http.ResponseWriter, r render.Render, c martini.Context, par
 }
 
 type config struct {
-	DbConnstr   string
-	Env         string
-	S3Server    string
-	S3Region    string
-	S3Bucket    string
-	S3AccessKey string
-	S3SecretKey string
-	SentryDSN   string
+	DbConnstr    string
+	Env          string
+	S3Server     string
+	S3Region     string
+	S3Bucket     string
+	S3AccessKey  string
+	S3SecretKey  string
+	SentryDSN    string
+	StatsdPrefix string
+	StatsdURL    string
 }
 
 var defaultConfig = config{
@@ -247,6 +249,9 @@ func main() {
 	// ----- END AWS Connections -----
 
 	gdb.RegisterEntities()
+
+	stats.CreateStatsdClient(conf.StatsdURL, conf.StatsdPrefix)
+	defer stats.ShutdownStatsdClient()
 
 	m := martini.New()
 	m.Use(martini.Recovery())
