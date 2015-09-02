@@ -340,6 +340,9 @@ type Artifact interface {
 	// as an io.ReadCloser. It is the responsibility of the caller to close the
 	// io.ReadCloser
 	GetContent() (io.ReadCloser, *ArtifactsError)
+
+	// Returns a direct link to the raw contents of this artifact
+	GetContentURL() string
 }
 
 type ArtifactImpl struct {
@@ -353,6 +356,11 @@ func (ai *ArtifactImpl) GetArtifactModel() *model.Artifact {
 
 func (ai *ArtifactImpl) GetBucket() *Bucket {
 	return ai.bucket
+}
+
+// GetContentURL returns a direct link to the raw contents of an artifact
+func (ai *ArtifactImpl) GetContentURL() string {
+	return fmt.Sprintf("%s/buckets/%s/artifacts/%s/content", ai.bucket.client.server, ai.bucket.bucket.Id, ai.artifact.Name)
 }
 
 // A chunked artifact is one which can be sent in chunks of

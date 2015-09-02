@@ -8,6 +8,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/dropbox/changes-artifacts/client/testserver"
+	"github.com/dropbox/changes-artifacts/model"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -391,5 +392,39 @@ func TestPushLogChunkCancelledContext(t *testing.T) {
 		err = sa.Close()
 		assert.Error(t, err)
 		assert.False(t, err.IsRetriable())
+	}
+}
+
+func TestArtifactURL(t *testing.T) {
+	client := NewArtifactStoreClient("http://foo")
+	bucket := &Bucket{
+		bucket: &model.Bucket{
+			Id: "bkt",
+		},
+		client: client,
+	}
+
+	{
+		streamedArtifact := &StreamedArtifact{
+			ArtifactImpl: &ArtifactImpl{
+				artifact: &model.Artifact{
+					Name: "safct",
+				},
+				bucket: bucket,
+			},
+		}
+		assert.Equal(t, "http://foo/buckets/bkt/artifacts/safct/content", streamedArtifact.GetContentURL())
+	}
+
+	{
+		chunkedArtifact := &ChunkedArtifact{
+			ArtifactImpl: &ArtifactImpl{
+				artifact: &model.Artifact{
+					Name: "cafct",
+				},
+				bucket: bucket,
+			},
+		}
+		assert.Equal(t, "http://foo/buckets/bkt/artifacts/cafct/content", chunkedArtifact.GetContentURL())
 	}
 }
