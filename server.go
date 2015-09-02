@@ -18,12 +18,14 @@ import (
 	"os/signal"
 	"runtime/pprof"
 	"syscall"
+	"time"
 
 	"golang.org/x/net/context"
 
 	"gopkg.in/amz.v1/aws"
 	"gopkg.in/amz.v1/s3"
 	"gopkg.in/gorp.v1"
+	"gopkg.in/tylerb/graceful.v1"
 
 	"github.com/dropbox/changes-artifacts/api"
 	"github.com/dropbox/changes-artifacts/common"
@@ -137,6 +139,21 @@ func performMigrations(db *sql.DB) error {
 	return err
 }
 
+func getListenAddr() string {
+	port := os.Getenv("PORT")
+
+	if len(port) == 0 {
+		// By default, we use port 3000
+		port = "3000"
+	}
+
+	// Host is "" => any address (IPv4/IPv6)
+	hostPort := ":" + port
+	log.Printf("About to listen on %s", hostPort)
+
+	return hostPort
+}
+
 func main() {
 	var flagConfigFile string
 	flag.StringVar(&flagConfigFile, "config", "", "JSON Config file containing DB parameters and S3 information")
@@ -150,6 +167,8 @@ func main() {
 	showVersion := flag.Bool("version", false, "Show version number and quit")
 
 	onlyPerformMigrations := flag.Bool("migrations-only", false, "Only perform database migrations and quit")
+
+	shutdownTimeout := flag.Duration("shutdown-timeout", 15*time.Second, "Time to wait before closing active connections after SIGTERM signal has been recieved")
 
 	flag.Parse()
 
@@ -275,5 +294,8 @@ func main() {
 	}, bindBucket)
 	m.Action(r.Handle)
 
-	m.Run()
+	// If the process gets a SIGTERM, it will close listening port allowing another server to bind and
+	// begin listening immediately. Any ongoing connections will be given 15 seconds (by default) to
+	// complete, after which they are forcibly terminated.
+	graceful.Run(getListenAddr(), *shutdownTimeout, m)
 }
