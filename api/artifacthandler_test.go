@@ -233,25 +233,25 @@ func TestAppendLogChunk(t *testing.T) {
 
 func TestPutArtifactErrorChecks(t *testing.T) {
 	// Chunked artifacts
-	assert.Error(t, PutArtifact(&model.Artifact{State: model.APPENDING}, nil, nil, PutArtifactReq{}))
-	assert.Error(t, PutArtifact(&model.Artifact{State: model.APPEND_COMPLETE}, nil, nil, PutArtifactReq{}))
+	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.APPENDING}, nil, nil, PutArtifactReq{}))
+	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.APPEND_COMPLETE}, nil, nil, PutArtifactReq{}))
 
 	// Already being uploaded elsewhere
-	assert.Error(t, PutArtifact(&model.Artifact{State: model.UPLOADING}, nil, nil, PutArtifactReq{}))
+	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.UPLOADING}, nil, nil, PutArtifactReq{}))
 
 	// Already completed upload
-	assert.Error(t, PutArtifact(&model.Artifact{State: model.UPLOADED}, nil, nil, PutArtifactReq{}))
+	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.UPLOADED}, nil, nil, PutArtifactReq{}))
 
-	assert.Error(t, PutArtifact(&model.Artifact{State: model.WAITING_FOR_UPLOAD}, nil, nil, PutArtifactReq{
+	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.WAITING_FOR_UPLOAD}, nil, nil, PutArtifactReq{
 		ContentLength: "",
 	}))
 
-	assert.Error(t, PutArtifact(&model.Artifact{State: model.WAITING_FOR_UPLOAD}, nil, nil, PutArtifactReq{
+	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.WAITING_FOR_UPLOAD}, nil, nil, PutArtifactReq{
 		ContentLength: "foo",
 	}))
 
 	// Size mismatch
-	assert.Error(t, PutArtifact(&model.Artifact{State: model.WAITING_FOR_UPLOAD, Size: 10}, nil, nil, PutArtifactReq{
+	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.WAITING_FOR_UPLOAD, Size: 10}, nil, nil, PutArtifactReq{
 		ContentLength: "20",
 	}))
 }
@@ -277,7 +277,7 @@ func TestPutArtifactToS3Successfully(t *testing.T) {
 	}).Return(nil).Once()
 
 	s3Server, s3Bucket := createS3Bucket(t)
-	assert.NoError(t, PutArtifact(&model.Artifact{
+	assert.NoError(t, PutArtifact(context.Background(), &model.Artifact{
 		State:    model.WAITING_FOR_UPLOAD,
 		Size:     10,
 		Name:     "TestPutArtifact__artifactName",
@@ -316,7 +316,7 @@ func TestPutArtifactToS3WithS3Errors(t *testing.T) {
 	// between different s3 errors. So, this should handle all cases.
 	s3Server.Quit()
 
-	assert.Error(t, PutArtifact(&model.Artifact{
+	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{
 		State:    model.WAITING_FOR_UPLOAD,
 		Size:     10,
 		Name:     "TestPutArtifact__artifactName",

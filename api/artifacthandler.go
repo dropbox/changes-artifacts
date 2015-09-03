@@ -162,7 +162,15 @@ func AppendLogChunk(db database.Database, artifact *model.Artifact, logChunk *mo
 	return nil
 }
 
-func PostArtifact(r render.Render, req *http.Request, db database.Database, s3bucket *s3.Bucket, artifact *model.Artifact) {
+// PostArtifact updates content associated with an artifact.
+//
+// If the artifact is streamed (uploaded in one shot), PutArtifact is invoked to stream content
+// directly through to S3.
+//
+// If the artifact is chunked (appended chunk by chunk), verify that the position being written to
+// matches the current end of artifact, insert a new log chunk at that position and move the end of
+// file forward.
+func PostArtifact(ctx context.Context, r render.Render, req *http.Request, db database.Database, s3bucket *s3.Bucket, artifact *model.Artifact) {
 	if artifact == nil {
 		JsonErrorf(r, http.StatusBadRequest, "Error: no artifact specified")
 		return
@@ -176,7 +184,7 @@ func PostArtifact(r render.Render, req *http.Request, db database.Database, s3bu
 			JsonErrorf(r, http.StatusBadRequest, "Error: couldn't parse Content-Length as int64")
 		} else if contentLength != artifact.Size {
 			JsonErrorf(r, http.StatusBadRequest, "Error: Content-Length does not match artifact size")
-		} else if err = PutArtifact(artifact, db, s3bucket, PutArtifactReq{ContentLength: contentLengthStr, Body: req.Body}); err != nil {
+		} else if err = PutArtifact(ctx, artifact, db, s3bucket, PutArtifactReq{ContentLength: contentLengthStr, Body: req.Body}); err != nil {
 			JsonErrorf(r, http.StatusInternalServerError, err.Error())
 		} else {
 			r.JSON(http.StatusOK, artifact)
@@ -286,7 +294,7 @@ func MergeLogChunks(ctx context.Context, artifact *model.Artifact, db database.D
 			defer close(uploadCompleteChan)
 			defer r.Close()
 			if err := s3bucket.PutReader(fileName, r, artifact.Size, "binary/octet-stream", s3.PublicRead); err != nil {
-				errChan <- fmt.Errorf("Error uploading to S3: %s", err)
+				errChan <- err
 				return
 			}
 
@@ -412,7 +420,10 @@ type PutArtifactReq struct {
 	Body          io.Reader
 }
 
-func PutArtifact(artifact *model.Artifact, db database.Database, bucket *s3.Bucket, req PutArtifactReq) error {
+// PutArtifact writes a streamed artifact to S3. The entire file contents are streamed directly
+// through to S3. If S3 is not accessible, we don't make any attempt to buffer on disk and fail
+// immediately.
+func PutArtifact(ctx context.Context, artifact *model.Artifact, db database.Database, bucket *s3.Bucket, req PutArtifactReq) error {
 	if artifact.State != model.WAITING_FOR_UPLOAD {
 		return fmt.Errorf("Expected artifact to be in state WAITING_FOR_UPLOAD: %s", artifact.State)
 	}
@@ -451,7 +462,7 @@ func PutArtifact(artifact *model.Artifact, db database.Database, bucket *s3.Buck
 		// yes, mark error. Else ignore.
 		if err != nil {
 			// TODO: s/ERROR/WAITING_FOR_UPLOAD/ ?
-			log.Printf("Error uploading to S3: %s\n", err)
+			sentry.ReportError(ctx, err)
 			artifact.State = model.ERROR
 			err2 := db.UpdateArtifact(artifact)
 			if err2 != nil {
