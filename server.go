@@ -48,25 +48,25 @@ func VersionHandler(res http.ResponseWriter, req *http.Request) {
 	res.Write([]byte(common.GetVersion()))
 }
 
-func bindBucket(w http.ResponseWriter, r render.Render, c martini.Context, params martini.Params, db database.Database) {
+func bindBucket(ctx context.Context, w http.ResponseWriter, r render.Render, c martini.Context, params martini.Params, db database.Database) {
 	bucket, err := db.GetBucket(params["bucket_id"])
 	if bucket == nil {
-		api.JsonErrorf(r, http.StatusBadRequest, err.Error())
+		api.LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	c.Map(bucket)
 
 	if err != nil && err.EntityNotFound() {
-		api.JsonErrorf(r, http.StatusBadRequest, "Bucket not found")
+		api.LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Bucket not found")
 		return
 	}
 
 	if err != nil {
-		api.JsonErrorf(r, http.StatusInternalServerError, "Database failure while trying to fetch bucket instance: %s", err.Error())
+		api.LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, "Database failure while trying to fetch bucket instance: %s", err.Error())
 	}
 }
 
-func bindArtifact(w http.ResponseWriter, r render.Render, c martini.Context, params martini.Params, bucket *model.Bucket, db database.Database) {
+func bindArtifact(ctx context.Context, w http.ResponseWriter, r render.Render, c martini.Context, params martini.Params, bucket *model.Bucket, db database.Database) {
 	if bucket == nil {
 		// XXX I don't know why we do this.
 		var artifact *model.Artifact
@@ -78,7 +78,7 @@ func bindArtifact(w http.ResponseWriter, r render.Render, c martini.Context, par
 	artifact := api.GetArtifact(bucket, params["artifact_name"], db)
 
 	if artifact == nil {
-		api.JsonErrorf(r, http.StatusBadRequest, "Artifact not found")
+		api.LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Artifact not found")
 		return
 	}
 

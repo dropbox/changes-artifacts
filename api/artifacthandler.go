@@ -75,9 +75,9 @@ func CreateArtifact(req CreateArtifactReq, bucket *model.Bucket, db database.Dat
 	return artifact, nil
 }
 
-func HandleCreateArtifact(r render.Render, req *http.Request, db database.Database, params martini.Params, bucket *model.Bucket) {
+func HandleCreateArtifact(ctx context.Context, r render.Render, req *http.Request, db database.Database, params martini.Params, bucket *model.Bucket) {
 	if bucket == nil {
-		JsonErrorf(r, http.StatusBadRequest, "Error: no bucket specified")
+		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "No bucket specified")
 		return
 	}
 
@@ -85,37 +85,37 @@ func HandleCreateArtifact(r render.Render, req *http.Request, db database.Databa
 
 	err := json.NewDecoder(req.Body).Decode(&createArtifactReq)
 	if err != nil {
-		JsonErrorf(r, http.StatusBadRequest, "Error decoding json: %s", err.Error())
+		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Error decoding json: %s", err.Error())
 	}
 	fmt.Printf("Artifact creation request: %v\n", createArtifactReq)
 	artifact, err := CreateArtifact(createArtifactReq, bucket, db)
 
 	if err != nil {
-		JsonErrorf(r, http.StatusInternalServerError, err.Error())
+		LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	r.JSON(http.StatusOK, artifact)
 }
 
-func ListArtifacts(r render.Render, req *http.Request, db database.Database, params martini.Params, bucket *model.Bucket) {
+func ListArtifacts(ctx context.Context, r render.Render, req *http.Request, db database.Database, params martini.Params, bucket *model.Bucket) {
 	if bucket == nil {
-		JsonErrorf(r, http.StatusBadRequest, "Error: no bucket specified")
+		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "No bucket specified")
 		return
 	}
 
 	artifacts, err := db.ListArtifactsInBucket(bucket.Id)
 	if err != nil {
-		JsonErrorf(r, http.StatusInternalServerError, "Error while listing artifacts: %s", err.Error())
+		LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, "Error while listing artifacts: %s", err.Error())
 		return
 	}
 
 	r.JSON(http.StatusOK, artifacts)
 }
 
-func HandleGetArtifact(r render.Render, artifact *model.Artifact) {
+func HandleGetArtifact(ctx context.Context, r render.Render, artifact *model.Artifact) {
 	if artifact == nil {
-		JsonErrorf(r, http.StatusBadRequest, "Error: no bucket specified")
+		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "No bucket specified")
 		return
 	}
 
@@ -172,7 +172,7 @@ func AppendLogChunk(db database.Database, artifact *model.Artifact, logChunk *mo
 // file forward.
 func PostArtifact(ctx context.Context, r render.Render, req *http.Request, db database.Database, s3bucket *s3.Bucket, artifact *model.Artifact) {
 	if artifact == nil {
-		JsonErrorf(r, http.StatusBadRequest, "Error: no artifact specified")
+		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "No artifact specified")
 		return
 	}
 
@@ -181,29 +181,29 @@ func PostArtifact(ctx context.Context, r render.Render, req *http.Request, db da
 		contentLengthStr := req.Header.Get("Content-Length")
 		contentLength, err := strconv.ParseInt(contentLengthStr, 10, 64) // string, base, bits
 		if err != nil {
-			JsonErrorf(r, http.StatusBadRequest, "Error: couldn't parse Content-Length as int64")
+			LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Couldn't parse Content-Length as int64")
 		} else if contentLength != artifact.Size {
-			JsonErrorf(r, http.StatusBadRequest, "Error: Content-Length does not match artifact size")
+			LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Content-Length does not match artifact size")
 		} else if err = PutArtifact(ctx, artifact, db, s3bucket, PutArtifactReq{ContentLength: contentLengthStr, Body: req.Body}); err != nil {
-			JsonErrorf(r, http.StatusInternalServerError, err.Error())
+			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, err.Error())
 		} else {
 			r.JSON(http.StatusOK, artifact)
 		}
 		return
 
 	case model.UPLOADING:
-		JsonErrorf(r, http.StatusBadRequest, "Error: artifact is currently being updated")
+		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Artifact is currently being updated")
 		return
 
 	case model.UPLOADED:
-		JsonErrorf(r, http.StatusBadRequest, "Error: artifact already uploaded")
+		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Artifact already uploaded")
 		return
 
 	case model.APPENDING:
 		// TODO: Treat contents as a JSON request containing a chunk.
 		logChunk := new(model.LogChunk)
 		if err := json.NewDecoder(req.Body).Decode(logChunk); err != nil {
-			JsonErrorf(r, http.StatusBadRequest, "Error: could not decode JSON request")
+			LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Could not decode JSON request")
 			return
 		}
 
@@ -216,7 +216,7 @@ func PostArtifact(ctx context.Context, r render.Render, req *http.Request, db da
 		return
 
 	case model.APPEND_COMPLETE:
-		JsonErrorf(r, http.StatusBadRequest, "Error: artifact is closed for further appends")
+		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Artifact is closed for further appends")
 		return
 	}
 }
@@ -352,7 +352,7 @@ func MergeLogChunks(ctx context.Context, artifact *model.Artifact, db database.D
 // HandleCloseArtifact handles the HTTP request to close an artifact. See CloseArtifact for details.
 func HandleCloseArtifact(ctx context.Context, r render.Render, params martini.Params, db database.Database, s3bucket *s3.Bucket, artifact *model.Artifact) {
 	if artifact == nil {
-		JsonErrorf(r, http.StatusBadRequest, "Error: no artifact specified")
+		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "No artifact specified")
 		return
 	}
 
@@ -364,9 +364,9 @@ func HandleCloseArtifact(ctx context.Context, r render.Render, params martini.Pa
 	r.JSON(http.StatusOK, map[string]interface{}{})
 }
 
-func GetArtifactContent(r render.Render, req *http.Request, res http.ResponseWriter, db database.Database, params martini.Params, s3bucket *s3.Bucket, artifact *model.Artifact) {
+func GetArtifactContent(ctx context.Context, r render.Render, req *http.Request, res http.ResponseWriter, db database.Database, params martini.Params, s3bucket *s3.Bucket, artifact *model.Artifact) {
 	if artifact == nil {
-		JsonErrorf(r, http.StatusBadRequest, "Error: no artifact specified")
+		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "No artifact specified")
 		return
 	}
 
@@ -375,7 +375,7 @@ func GetArtifactContent(r render.Render, req *http.Request, res http.ResponseWri
 		// Fetch from S3
 		reader, err := s3bucket.GetReader(artifact.S3URL)
 		if err != nil {
-			JsonErrorf(r, http.StatusInternalServerError, err.Error())
+			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, err.Error())
 			return
 		}
 		// Ideally, we'll use a Hijacker to take over the conn so that we can employ an io.Writer
@@ -384,7 +384,7 @@ func GetArtifactContent(r render.Render, req *http.Request, res http.ResponseWri
 		var buf bytes.Buffer
 		_, err = buf.ReadFrom(reader)
 		if err != nil {
-			JsonErrorf(r, http.StatusInternalServerError, "Error reading upload buffer: %s", err.Error())
+			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, "Error reading upload buffer: %s", err.Error())
 			return
 		}
 		res.Write(buf.Bytes())
@@ -399,7 +399,7 @@ func GetArtifactContent(r render.Render, req *http.Request, res http.ResponseWri
 		// Pick from log chunks
 		logChunks, err := db.ListLogChunksInArtifact(artifact.Id)
 		if err != nil {
-			JsonErrorf(r, http.StatusInternalServerError, err.Error())
+			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, err.Error())
 			return
 		}
 		var buf bytes.Buffer
@@ -410,7 +410,7 @@ func GetArtifactContent(r render.Render, req *http.Request, res http.ResponseWri
 		return
 	case model.WAITING_FOR_UPLOAD:
 		// Not started yet. Error
-		JsonErrorf(r, http.StatusNotFound, "Waiting for content to get uploaded")
+		LogAndRespondWithErrorf(ctx, r, http.StatusNotFound, "Waiting for content to get uploaded")
 		return
 	}
 }

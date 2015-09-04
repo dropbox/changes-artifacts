@@ -34,9 +34,9 @@ func NewWrappedHttpError(code int, err error) *HttpError {
 // Ensure that HttpError implements error
 var _ error = new(HttpError)
 
-func ListBuckets(r render.Render, db database.Database) {
+func ListBuckets(ctx context.Context, r render.Render, db database.Database) {
 	if buckets, err := db.ListBuckets(); err != nil {
-		JsonErrorf(r, http.StatusBadRequest, err.Error())
+		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, err.Error())
 	} else {
 		r.JSON(http.StatusOK, buckets)
 	}
@@ -70,14 +70,14 @@ func CreateBucket(db database.Database, clk common.Clock, bucketId string, owner
 	return &bucket, nil
 }
 
-func HandleCreateBucket(r render.Render, req *http.Request, db database.Database, clk common.Clock) {
+func HandleCreateBucket(ctx context.Context, r render.Render, req *http.Request, db database.Database, clk common.Clock) {
 	var createBucketReq struct {
 		ID    string
 		Owner string
 	}
 
 	if err := json.NewDecoder(req.Body).Decode(&createBucketReq); err != nil {
-		JsonErrorf(r, http.StatusBadRequest, "Malformed JSON request")
+		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Malformed JSON request")
 		return
 	}
 
@@ -88,9 +88,9 @@ func HandleCreateBucket(r render.Render, req *http.Request, db database.Database
 	}
 }
 
-func HandleGetBucket(r render.Render, bucket *model.Bucket) {
+func HandleGetBucket(ctx context.Context, r render.Render, bucket *model.Bucket) {
 	if bucket == nil {
-		JsonErrorf(r, http.StatusBadRequest, "Error: no bucket specified")
+		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "No bucket specified")
 		return
 	}
 
@@ -100,7 +100,7 @@ func HandleGetBucket(r render.Render, bucket *model.Bucket) {
 // HandleCloseBucket handles the HTTP request to close a bucket. See CloseBucket for details.
 func HandleCloseBucket(ctx context.Context, r render.Render, db database.Database, bucket *model.Bucket, s3Bucket *s3.Bucket, clk common.Clock) {
 	if bucket == nil {
-		JsonErrorf(r, http.StatusBadRequest, "Error: no bucket specified")
+		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "No bucket specified")
 		return
 	}
 
