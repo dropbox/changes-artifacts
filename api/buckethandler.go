@@ -24,7 +24,10 @@ func (he *HttpError) Error() string {
 }
 
 func NewHttpError(code int, format string, args ...interface{}) *HttpError {
-	return &HttpError{errCode: code, errStr: fmt.Sprintf(format, args...)}
+	if len(args) > 0 {
+		return &HttpError{errCode: code, errStr: fmt.Sprintf(format, args...)}
+	}
+	return &HttpError{errCode: code, errStr: format}
 }
 
 func NewWrappedHttpError(code int, err error) *HttpError {
@@ -36,7 +39,7 @@ var _ error = new(HttpError)
 
 func ListBuckets(ctx context.Context, r render.Render, db database.Database) {
 	if buckets, err := db.ListBuckets(); err != nil {
-		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, err.Error())
+		LogAndRespondWithError(ctx, r, http.StatusBadRequest, err)
 	} else {
 		r.JSON(http.StatusOK, buckets)
 	}
@@ -82,7 +85,7 @@ func HandleCreateBucket(ctx context.Context, r render.Render, req *http.Request,
 	}
 
 	if bucket, err := CreateBucket(db, clk, createBucketReq.ID, createBucketReq.Owner); err != nil {
-		r.JSON(err.errCode, map[string]string{"error": err.errStr})
+		LogAndRespondWithError(ctx, r, err.errCode, err)
 	} else {
 		r.JSON(http.StatusOK, bucket)
 	}
@@ -105,7 +108,7 @@ func HandleCloseBucket(ctx context.Context, r render.Render, db database.Databas
 	}
 
 	if err := CloseBucket(ctx, bucket, db, s3Bucket, clk); err != nil {
-		r.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("Error while closing bucket: %s", err)})
+		LogAndRespondWithError(ctx, r, http.StatusBadRequest, err)
 	} else {
 		r.JSON(http.StatusOK, bucket)
 	}

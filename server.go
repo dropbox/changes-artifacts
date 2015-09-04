@@ -51,7 +51,7 @@ func VersionHandler(res http.ResponseWriter, req *http.Request) {
 func bindBucket(ctx context.Context, w http.ResponseWriter, r render.Render, c martini.Context, params martini.Params, db database.Database) {
 	bucket, err := db.GetBucket(params["bucket_id"])
 	if bucket == nil {
-		api.LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, err.Error())
+		api.LogAndRespondWithError(ctx, r, http.StatusBadRequest, err)
 		return
 	}
 	c.Map(bucket)
@@ -62,7 +62,7 @@ func bindBucket(ctx context.Context, w http.ResponseWriter, r render.Render, c m
 	}
 
 	if err != nil {
-		api.LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, "Database failure while trying to fetch bucket instance: %s", err.Error())
+		api.LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
 	}
 }
 
@@ -173,6 +173,7 @@ func main() {
 	shutdownTimeout := flag.Duration("shutdown-timeout", 15*time.Second, "Time to wait before closing active connections after SIGTERM signal has been recieved")
 
 	flag.Parse()
+	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
 
 	if *showVersion {
 		fmt.Println(common.GetVersion())

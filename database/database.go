@@ -55,14 +55,20 @@ func NewValidationError(format string, args ...interface{}) *DatabaseError {
 	if format == "" {
 		panic("Error formatting NewValidationError")
 	}
-	return &DatabaseError{errStr: fmt.Sprintf(format, args...), errType: VALIDATION_FAILURE}
+	if len(args) > 0 {
+		return &DatabaseError{errStr: fmt.Sprintf(format, args...), errType: VALIDATION_FAILURE}
+	}
+	return &DatabaseError{errStr: format, errType: VALIDATION_FAILURE}
 }
 
 func NewEntityNotFoundError(format string, args ...interface{}) *DatabaseError {
 	if format == "" {
 		panic("Error formatting NewEntityNotFoundError")
 	}
-	return &DatabaseError{errStr: fmt.Sprintf(format, args...), errType: ENTITY_NOT_FOUND}
+	if len(args) > 0 {
+		return &DatabaseError{errStr: fmt.Sprintf(format, args...), errType: ENTITY_NOT_FOUND}
+	}
+	return &DatabaseError{errStr: format, errType: ENTITY_NOT_FOUND}
 }
 
 func (dbe *DatabaseError) EntityNotFound() bool {

@@ -10,10 +10,19 @@ import (
 	"github.com/martini-contrib/render"
 )
 
-// Post a JSON-serialized error message and statuscode on the HTTP response object (using Martini render).
+// LogAndRespondWithErrorf posts a JSON-serialized error message and statuscode on the HTTP response
+// object (using Martini render).
 // Log the error message to Sentry.
 func LogAndRespondWithErrorf(ctx context.Context, render render.Render, code int, errStr string, params ...interface{}) {
 	msg := fmt.Sprintf(errStr, params)
 	sentry.ReportError(ctx, errors.New(msg))
 	render.JSON(code, map[string]string{"error": msg})
+}
+
+// LogAndRespondWithError posts a JSON-serialized error and statuscode on the HTTP response object
+// (using Martini render).
+// Log the error message to Sentry.
+func LogAndRespondWithError(ctx context.Context, render render.Render, code int, err error) {
+	sentry.ReportError(ctx, err)
+	render.JSON(code, map[string]string{"error": err.Error()})
 }

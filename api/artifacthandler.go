@@ -85,13 +85,12 @@ func HandleCreateArtifact(ctx context.Context, r render.Render, req *http.Reques
 
 	err := json.NewDecoder(req.Body).Decode(&createArtifactReq)
 	if err != nil {
-		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Error decoding json: %s", err.Error())
+		LogAndRespondWithError(ctx, r, http.StatusBadRequest, err)
 	}
-	fmt.Printf("Artifact creation request: %v\n", createArtifactReq)
 	artifact, err := CreateArtifact(createArtifactReq, bucket, db)
 
 	if err != nil {
-		LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, err.Error())
+		LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -106,7 +105,7 @@ func ListArtifacts(ctx context.Context, r render.Render, req *http.Request, db d
 
 	artifacts, err := db.ListArtifactsInBucket(bucket.Id)
 	if err != nil {
-		LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, "Error while listing artifacts: %s", err.Error())
+		LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -185,7 +184,7 @@ func PostArtifact(ctx context.Context, r render.Render, req *http.Request, db da
 		} else if contentLength != artifact.Size {
 			LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Content-Length does not match artifact size")
 		} else if err = PutArtifact(ctx, artifact, db, s3bucket, PutArtifactReq{ContentLength: contentLengthStr, Body: req.Body}); err != nil {
-			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, err.Error())
+			LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
 		} else {
 			r.JSON(http.StatusOK, artifact)
 		}
@@ -203,12 +202,12 @@ func PostArtifact(ctx context.Context, r render.Render, req *http.Request, db da
 		// TODO: Treat contents as a JSON request containing a chunk.
 		logChunk := new(model.LogChunk)
 		if err := json.NewDecoder(req.Body).Decode(logChunk); err != nil {
-			LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Could not decode JSON request")
+			LogAndRespondWithError(ctx, r, http.StatusBadRequest, err)
 			return
 		}
 
 		if err := AppendLogChunk(db, artifact, logChunk); err != nil {
-			r.JSON(err.errCode, map[string]string{"error": err.Error()})
+			LogAndRespondWithError(ctx, r, err.errCode, err)
 			return
 		}
 
@@ -357,7 +356,7 @@ func HandleCloseArtifact(ctx context.Context, r render.Render, params martini.Pa
 	}
 
 	if err := CloseArtifact(ctx, artifact, db, s3bucket, true); err != nil {
-		r.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("%s", err)})
+		LogAndRespondWithError(ctx, r, http.StatusBadRequest, err)
 		return
 	}
 
@@ -375,7 +374,7 @@ func GetArtifactContent(ctx context.Context, r render.Render, req *http.Request,
 		// Fetch from S3
 		reader, err := s3bucket.GetReader(artifact.S3URL)
 		if err != nil {
-			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, err.Error())
+			LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
 			return
 		}
 		// Ideally, we'll use a Hijacker to take over the conn so that we can employ an io.Writer
@@ -384,14 +383,14 @@ func GetArtifactContent(ctx context.Context, r render.Render, req *http.Request,
 		var buf bytes.Buffer
 		_, err = buf.ReadFrom(reader)
 		if err != nil {
-			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, "Error reading upload buffer: %s", err.Error())
+			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, "Error reading upload buffer: %s", err)
 			return
 		}
 		res.Write(buf.Bytes())
 		return
 	case model.UPLOADING:
 		// Not done uploading to S3 yet. Error.
-		r.JSON(http.StatusNotFound, map[string]string{"error": "Waiting for content to complete uploading"})
+		LogAndRespondWithErrorf(ctx, r, http.StatusNotFound, "Waiting for content to complete uploading")
 		return
 	case model.APPENDING:
 		fallthrough
@@ -399,7 +398,7 @@ func GetArtifactContent(ctx context.Context, r render.Render, req *http.Request,
 		// Pick from log chunks
 		logChunks, err := db.ListLogChunksInArtifact(artifact.Id)
 		if err != nil {
-			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, err.Error())
+			LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
 			return
 		}
 		var buf bytes.Buffer
