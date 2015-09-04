@@ -17,6 +17,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/dropbox/changes-artifacts/common/sentry"
+	"github.com/dropbox/changes-artifacts/common/stats"
 	"github.com/dropbox/changes-artifacts/database"
 	"github.com/dropbox/changes-artifacts/model"
 	"github.com/go-martini/martini"
@@ -25,6 +26,8 @@ import (
 )
 
 const DEFAULT_DEADLINE = 30
+
+var bytesUploadedCounter = stats.NewStat("bytes_uploaded")
 
 type CreateArtifactReq struct {
 	Name         string
@@ -298,6 +301,7 @@ func MergeLogChunks(ctx context.Context, artifact *model.Artifact, db database.D
 			}
 
 			uploadCompleteChan <- true
+			bytesUploadedCounter.Add(artifact.Size)
 		}()
 
 		for _, logChunk := range logChunks {
@@ -477,6 +481,7 @@ func PutArtifact(ctx context.Context, artifact *model.Artifact, db database.Data
 	if err := bucket.PutReader(fileName, req.Body, artifact.Size, "binary/octet-stream", s3.PublicRead); err != nil {
 		return cleanupAndReturn(fmt.Errorf("Error uploading to S3: %s", err))
 	}
+	bytesUploadedCounter.Add(artifact.Size)
 
 	artifact.State = model.UPLOADED
 	artifact.S3URL = fileName
