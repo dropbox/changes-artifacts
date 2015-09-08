@@ -117,4 +117,8 @@ type Database interface {
 	GetArtifactById(int64) (*model.Artifact, *DatabaseError)
 
 	GetLastByteSeenForArtifact(int64) (int64, *DatabaseError)
+
+	// Get last logchunk seen for an artifact. This method is expected to be more expensive than
+	// GetLastByteSeenForArtifact - use that method if appropriate.
+	GetLastLogChunkSeenForArtifact(int64) (*model.LogChunk, *DatabaseError)
 }

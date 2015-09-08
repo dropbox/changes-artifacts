@@ -170,5 +170,16 @@ func (db *GorpDatabase) GetLastByteSeenForArtifact(artifactId int64) (int64, *Da
 	}
 }
 
+// GetLastLogChunkSeenForArtifact returns the last full logchunk present in the database associated
+// with artifact.
+func (db *GorpDatabase) GetLastLogChunkSeenForArtifact(artifactID int64) (*model.LogChunk, *DatabaseError) {
+	var logChunk model.LogChunk
+	if err := db.dbmap.SelectOne(&logChunk, "SELECT * FROM logchunk WHERE artifactid = :artifactid ORDER BY byteoffset DESC LIMIT 1",
+		map[string]interface{}{"artifactid": artifactID}); err != nil {
+		return nil, WrapInternalDatabaseError(err)
+	}
+	return &logChunk, nil
+}
+
 // Ensure GorpDatabase implements Database
 var _ Database = new(GorpDatabase)

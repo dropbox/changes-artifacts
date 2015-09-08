@@ -124,7 +124,11 @@ func HandleGetArtifact(ctx context.Context, r render.Render, artifact *model.Art
 	r.JSON(http.StatusOK, artifact)
 }
 
-func AppendLogChunk(db database.Database, artifact *model.Artifact, logChunk *model.LogChunk) *HttpError {
+// AppendLogChunk appends a logchunk to an artifact.
+// If the logchunk position does not match the current end of artifact, an error is returned.
+// An exception to this is made when the last seen logchunk is repeated, which is silently ignored
+// without an error.
+func AppendLogChunk(ctx context.Context, db database.Database, artifact *model.Artifact, logChunk *model.LogChunk) *HttpError {
 	if artifact.State != model.APPENDING {
 		return NewHttpError(http.StatusBadRequest, fmt.Sprintf("Unexpected artifact state: %s", artifact.State))
 	}
@@ -145,6 +149,21 @@ func AppendLogChunk(db database.Database, artifact *model.Artifact, logChunk *mo
 	if nextByteOffset, err := db.GetLastByteSeenForArtifact(artifact.Id); err != nil {
 		return NewHttpError(http.StatusInternalServerError, "Error while checking for previous byte range: %s", err)
 	} else if nextByteOffset != logChunk.ByteOffset {
+		// There is a possibility the previous logchunk is being retried - we need to handle cases where
+		// a server/proxy time out caused the client not to get an ACK when it successfully uploaded the
+		// previous logchunk, due to which it is retrying.
+		//
+		// This is a best-effort check - if we encounter DB errors or any mismatch in the chunk
+		// contents, we ignore this test and claim that a range mismatch occured.
+		if nextByteOffset != 0 && nextByteOffset == logChunk.ByteOffset+logChunk.Size {
+			if prevLogChunk, err := db.GetLastLogChunkSeenForArtifact(artifact.Id); err == nil {
+				if prevLogChunk != nil && prevLogChunk.ByteOffset == logChunk.ByteOffset && prevLogChunk.Size == logChunk.Size && prevLogChunk.Content == logChunk.Content {
+					sentry.ReportMessage(ctx, fmt.Sprintf("Received duplicate chunk for artifact %s of size %d at byte %d", logChunk.ArtifactId, logChunk.Size, logChunk.ByteOffset))
+					return nil
+				}
+			}
+		}
+
 		return NewHttpError(http.StatusBadRequest, "Overlapping ranges detected, expected offset: %d, actual offset: %d", nextByteOffset, logChunk.ByteOffset)
 	}
 
@@ -209,7 +228,7 @@ func PostArtifact(ctx context.Context, r render.Render, req *http.Request, db da
 			return
 		}
 
-		if err := AppendLogChunk(db, artifact, logChunk); err != nil {
+		if err := AppendLogChunk(ctx, db, artifact, logChunk); err != nil {
 			LogAndRespondWithError(ctx, r, err.errCode, err)
 			return
 		}

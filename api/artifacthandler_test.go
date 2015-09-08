@@ -160,19 +160,19 @@ func TestAppendLogChunk(t *testing.T) {
 	mockdb := &database.MockDatabase{}
 
 	// Already completed artifact
-	assert.Error(t, AppendLogChunk(mockdb, &model.Artifact{
+	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPEND_COMPLETE,
 	}, nil))
 
 	// Size 0 chunk
-	assert.Error(t, AppendLogChunk(mockdb, &model.Artifact{
+	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 	}, &model.LogChunk{
 		Size: 0,
 	}))
 
 	// Blank string chunk
-	assert.Error(t, AppendLogChunk(mockdb, &model.Artifact{
+	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 	}, &model.LogChunk{
 		Size:    1,
@@ -180,7 +180,7 @@ func TestAppendLogChunk(t *testing.T) {
 	}))
 
 	// Mismatch between size and content chunk
-	assert.Error(t, AppendLogChunk(mockdb, &model.Artifact{
+	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 	}, &model.LogChunk{
 		Size:    1,
@@ -194,20 +194,30 @@ func TestAppendLogChunk(t *testing.T) {
 
 	// DB Error while trying to find where the next byte is expected
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(0), database.MockDatabaseError()).Once()
-	assert.Error(t, AppendLogChunk(mockdb, &model.Artifact{
+	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
 	}, logChunk))
 
+	// Last logchunk was repeated.
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(2), nil).Once()
-	assert.Error(t, AppendLogChunk(mockdb, &model.Artifact{
+	mockdb.On("GetLastLogChunkSeenForArtifact", int64(10)).Return(&model.LogChunk{Size: 2, Content: "ab"}, nil).Once()
+	assert.NoError(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
+		State: model.APPENDING,
+		Id:    10,
+	}, logChunk))
+
+	// Unexpected logchunk
+	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(2), nil).Once()
+	mockdb.On("GetLastLogChunkSeenForArtifact", int64(10)).Return(&model.LogChunk{Size: 3}, nil).Once()
+	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
 	}, logChunk))
 
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(0), nil).Once()
 	mockdb.On("UpdateArtifact", mock.AnythingOfType("*model.Artifact")).Return(database.MockDatabaseError()).Once()
-	assert.Error(t, AppendLogChunk(mockdb, &model.Artifact{
+	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
 	}, logChunk))
@@ -215,7 +225,7 @@ func TestAppendLogChunk(t *testing.T) {
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(0), nil).Once()
 	mockdb.On("UpdateArtifact", mock.AnythingOfType("*model.Artifact")).Return(nil).Once()
 	mockdb.On("InsertLogChunk", logChunk).Return(database.MockDatabaseError()).Once()
-	assert.Error(t, AppendLogChunk(mockdb, &model.Artifact{
+	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
 	}, logChunk))
@@ -223,7 +233,7 @@ func TestAppendLogChunk(t *testing.T) {
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(0), nil).Once()
 	mockdb.On("UpdateArtifact", mock.AnythingOfType("*model.Artifact")).Return(nil).Once()
 	mockdb.On("InsertLogChunk", logChunk).Return(nil).Once()
-	assert.NoError(t, AppendLogChunk(mockdb, &model.Artifact{
+	assert.NoError(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
 	}, logChunk))
