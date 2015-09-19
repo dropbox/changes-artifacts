@@ -22,12 +22,12 @@ const (
 )
 
 type Bucket struct {
-	DateClosed  time.Time
-	DateCreated time.Time
+	DateClosed  time.Time `json:"dateClosed"`
+	DateCreated time.Time `json:"dateCreated"`
 	// Must be globally unique even between different owners. Other than that, it can
 	// be arbitrary.
-	Id string
+	Id string `json:"id"`
 	// A characteristic string signifying what service owns the bucket.
-	Owner string
-	State BucketState
+	Owner string      `json:"owner"`
+	State BucketState `json:"state"`
 }

@@ -43,19 +43,19 @@ const (
 )
 
 type Artifact struct {
-	BucketId    string
-	DateCreated time.Time
+	BucketId    string    `json:"bucketId"`
+	DateCreated time.Time `json:"dateCreated"`
 	// Auto-generated globally unique id.
-	Id int64
+	Id int64 `json:"id"`
 	// id that must be unique within a bucket (but not necessairly globally).
 	// For streamed artifacts this is often the file nane.
-	Name string
+	Name string `json:"name"`
 	// This is deterministically generated as /<BucketId>/<Name> but in case we wish to
 	// switch conventions later we store it.
-	S3URL        string
-	Size         int64
-	State        ArtifactState
-	DeadlineMins uint
+	S3URL        string        `json:"s3URL"`
+	Size         int64         `json:"size"`
+	State        ArtifactState `json:"state"`
+	DeadlineMins uint          `json:"deadlineMins"`
 }
 
 func (a *Artifact) DefaultS3URL() string {
