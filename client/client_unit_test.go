@@ -9,7 +9,7 @@ import (
 
 	"github.com/dropbox/changes-artifacts/client/testserver"
 	"github.com/dropbox/changes-artifacts/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewBucketSuccessStateWithWrongName(t *testing.T) {
@@ -21,9 +21,9 @@ func TestNewBucketSuccessStateWithWrongName(t *testing.T) {
 	ts.ExpectAndRespond("POST", "/buckets/", http.StatusOK, `{"Id": "1234"}`)
 
 	b, err := client.NewBucket("foo", "bar", 32)
-	assert.Nil(t, b)
-	assert.Error(t, err)
-	assert.False(t, err.IsRetriable(), "Error %s should not be retriable", err)
+	require.Nil(t, b)
+	require.Error(t, err)
+	require.False(t, err.IsRetriable(), "Error %s should not be retriable", err)
 }
 
 func TestNewBucketSuccessfully(t *testing.T) {
@@ -35,8 +35,8 @@ func TestNewBucketSuccessfully(t *testing.T) {
 	ts.ExpectAndRespond("POST", "/buckets/", http.StatusOK, `{"Id": "foo"}`)
 
 	b, err := client.NewBucket("foo", "bar", 32)
-	assert.NotNil(t, b)
-	assert.NoError(t, err)
+	require.NotNil(t, b)
+	require.NoError(t, err)
 }
 
 func TestGetBucketSuccessStateWithWrongName(t *testing.T) {
@@ -48,9 +48,9 @@ func TestGetBucketSuccessStateWithWrongName(t *testing.T) {
 	ts.ExpectAndRespond("GET", "/buckets/foo", http.StatusOK, `{"Id": "1234"}`)
 
 	b, err := client.GetBucket("foo")
-	assert.Nil(t, b)
-	assert.Error(t, err)
-	assert.False(t, err.IsRetriable(), "Error %s should not be retriable", err)
+	require.Nil(t, b)
+	require.Error(t, err)
+	require.False(t, err.IsRetriable(), "Error %s should not be retriable", err)
 }
 
 func TestGetBucketSuccessfully(t *testing.T) {
@@ -62,8 +62,8 @@ func TestGetBucketSuccessfully(t *testing.T) {
 	ts.ExpectAndRespond("GET", "/buckets/foo", http.StatusOK, `{"Id": "foo"}`)
 
 	b, err := client.GetBucket("foo")
-	assert.NotNil(t, b)
-	assert.NoError(t, err)
+	require.NotNil(t, b)
+	require.NoError(t, err)
 }
 
 func TestNewStreamedArtifactWithWrongName(t *testing.T) {
@@ -77,8 +77,8 @@ func TestNewStreamedArtifactWithWrongName(t *testing.T) {
 
 	b, _ := client.NewBucket("foo", "bar", 32)
 	sa, err := b.NewStreamedArtifact("artifact", 10)
-	assert.Nil(t, sa)
-	assert.Error(t, err)
+	require.Nil(t, sa)
+	require.Error(t, err)
 }
 
 func TestNewStreamedArtifactSuccessfully(t *testing.T) {
@@ -92,8 +92,8 @@ func TestNewStreamedArtifactSuccessfully(t *testing.T) {
 
 	b, _ := client.NewBucket("foo", "bar", 32)
 	sa, err := b.NewStreamedArtifact("artifact", 10)
-	assert.NotNil(t, sa)
-	assert.NoError(t, err)
+	require.NotNil(t, sa)
+	require.NoError(t, err)
 }
 
 func TestNewBucketErrors(t *testing.T) {
@@ -164,9 +164,9 @@ func testErrorCombinations(t *testing.T,
 		ts.CloseAndAssertExpectations()
 		// Server is missing, network error
 		op, err := test(client, obj)
-		assert.Nil(t, op)
-		assert.Error(t, err)
-		assert.True(t, err.IsRetriable(), "Error %s should be retriable", err)
+		require.Nil(t, op)
+		require.Error(t, err)
+		require.True(t, err.IsRetriable(), "Error %s should be retriable", err)
 	}
 
 	{
@@ -179,9 +179,9 @@ func testErrorCombinations(t *testing.T,
 		ts.ExpectAndRespond(method, url, http.StatusInternalServerError, `{"error": "Something bad happened"}`)
 
 		op, err := test(client, obj)
-		assert.Nil(t, op)
-		assert.Error(t, err)
-		assert.True(t, err.IsRetriable(), "Error %s should be retriable", err)
+		require.Nil(t, op)
+		require.Error(t, err)
+		require.True(t, err.IsRetriable(), "Error %s should be retriable", err)
 	}
 
 	{
@@ -194,9 +194,9 @@ func testErrorCombinations(t *testing.T,
 		ts.ExpectAndRespond(method, url, http.StatusBadRequest, `{"error": "Bad client"}`)
 
 		op, err := test(client, obj)
-		assert.Nil(t, op)
-		assert.Error(t, err)
-		assert.False(t, err.IsRetriable(), "Error %s should not be retriable", err)
+		require.Nil(t, op)
+		require.Error(t, err)
+		require.False(t, err.IsRetriable(), "Error %s should not be retriable", err)
 	}
 
 	{
@@ -209,9 +209,9 @@ func testErrorCombinations(t *testing.T,
 		ts.ExpectAndRespond(method, url, http.StatusBadGateway, `<html>Foo</html>`)
 
 		op, err := test(client, obj)
-		assert.Nil(t, op)
-		assert.Error(t, err)
-		assert.True(t, err.IsRetriable(), "Error %s should be retriable", err)
+		require.Nil(t, op)
+		require.Error(t, err)
+		require.True(t, err.IsRetriable(), "Error %s should be retriable", err)
 	}
 
 	{
@@ -224,9 +224,9 @@ func testErrorCombinations(t *testing.T,
 		ts.ExpectAndRespond(method, url, http.StatusOK, `<html></html>`)
 
 		op, err := test(client, obj)
-		assert.Nil(t, op)
-		assert.Error(t, err)
-		assert.False(t, err.IsRetriable(), "Error %s should not be retriable", err)
+		require.Nil(t, op)
+		require.Error(t, err)
+		require.False(t, err.IsRetriable(), "Error %s should not be retriable", err)
 	}
 
 	{
@@ -238,9 +238,9 @@ func testErrorCombinations(t *testing.T,
 		ts.ExpectAndHang(method, url)
 
 		op, err := test(client, obj)
-		assert.Nil(t, op)
-		assert.Error(t, err)
-		assert.True(t, err.IsRetriable(), "Error %s should be retriable", err)
+		require.Nil(t, op)
+		require.Error(t, err)
+		require.True(t, err.IsRetriable(), "Error %s should be retriable", err)
 	}
 }
 
@@ -255,26 +255,26 @@ func TestUploadLogChunksAndFlushSuccessfully(t *testing.T) {
 
 	b, _ := client.NewBucket("foo", "bar", 32)
 	sa, err := b.NewChunkedArtifact("artifact")
-	assert.NotNil(t, sa)
-	assert.NoError(t, err)
+	require.NotNil(t, sa)
+	require.NoError(t, err)
 
 	{
 		// Content request might come later, even as late as Flush()
 		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact", 200, `{}`)
 		err := sa.AppendLog("console contents")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
 	{
 		// Content request might come later, even as late as Flush()
 		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact", 200, `{}`)
 		err := sa.AppendLog("more console contents")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
 	{
 		err := sa.Flush()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 }
 
@@ -289,27 +289,27 @@ func TestUploadLogChunksAndCloseSuccessfully(t *testing.T) {
 
 	b, _ := client.NewBucket("foo", "bar", 32)
 	sa, err := b.NewChunkedArtifact("artifact")
-	assert.NotNil(t, sa)
-	assert.NoError(t, err)
+	require.NotNil(t, sa)
+	require.NoError(t, err)
 
 	{
 		// Content request might come later, even as late as Flush()
 		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact", 200, `{}`)
 		err := sa.AppendLog("console contents")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
 	{
 		// Content request might come later, even as late as Flush()
 		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact", 200, `{}`)
 		err := sa.AppendLog("more console contents")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
 	{
 		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact/close", 200, `{}`)
 		err := sa.Close()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 }
 
@@ -324,8 +324,8 @@ func TestPushLogChunkServerSucceedOnRetry(t *testing.T) {
 
 	b, _ := client.NewBucket("foo", "bar", 32)
 	sa, err := b.NewChunkedArtifact("artifact")
-	assert.NotNil(t, sa)
-	assert.NoError(t, err)
+	require.NotNil(t, sa)
+	require.NoError(t, err)
 
 	{
 		// Fail with a retriable error first
@@ -333,13 +333,13 @@ func TestPushLogChunkServerSucceedOnRetry(t *testing.T) {
 		// Then succeed on retry
 		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact", 200, `{}`)
 		err := sa.AppendLog("console contents")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
 	{
 		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact/close", 200, `{}`)
 		err := sa.Close()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 }
 
@@ -354,17 +354,17 @@ func TestPushLogChunkServerFailWithTerminalError(t *testing.T) {
 
 	b, _ := client.NewBucket("foo", "bar", 32)
 	sa, err := b.NewChunkedArtifact("artifact")
-	assert.NotNil(t, sa)
-	assert.NoError(t, err)
+	require.NotNil(t, sa)
+	require.NoError(t, err)
 
 	{
 		// Fail with a terminal error
 		ts.ExpectAndRespond("POST", "/buckets/foo/artifacts/artifact", 400, `{}`)
 		err := sa.AppendLog("console contents")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		err = sa.Close()
-		assert.Error(t, err)
-		assert.False(t, err.IsRetriable())
+		require.Error(t, err)
+		require.False(t, err.IsRetriable())
 	}
 }
 
@@ -380,18 +380,18 @@ func TestPushLogChunkCancelledContext(t *testing.T) {
 
 	b, _ := client.NewBucket("foo", "bar", 32)
 	sa, err := b.NewChunkedArtifact("artifact")
-	assert.NotNil(t, sa)
-	assert.NoError(t, err)
+	require.NotNil(t, sa)
+	require.NoError(t, err)
 
 	// Cancel the context to prevent any further requests
 	cancel()
 
 	{
 		err := sa.AppendLog("console contents")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		err = sa.Close()
-		assert.Error(t, err)
-		assert.False(t, err.IsRetriable())
+		require.Error(t, err)
+		require.False(t, err.IsRetriable())
 	}
 }
 
@@ -413,7 +413,7 @@ func TestArtifactURL(t *testing.T) {
 				bucket: bucket,
 			},
 		}
-		assert.Equal(t, "http://foo/buckets/bkt/artifacts/safct/content", streamedArtifact.GetContentURL())
+		require.Equal(t, "http://foo/buckets/bkt/artifacts/safct/content", streamedArtifact.GetContentURL())
 	}
 
 	{
@@ -425,6 +425,6 @@ func TestArtifactURL(t *testing.T) {
 				bucket: bucket,
 			},
 		}
-		assert.Equal(t, "http://foo/buckets/bkt/artifacts/cafct/content", chunkedArtifact.GetContentURL())
+		require.Equal(t, "http://foo/buckets/bkt/artifacts/cafct/content", chunkedArtifact.GetContentURL())
 	}
 }

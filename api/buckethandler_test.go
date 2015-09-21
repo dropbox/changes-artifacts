@@ -7,7 +7,7 @@ import (
 	"github.com/dropbox/changes-artifacts/common"
 	"github.com/dropbox/changes-artifacts/database"
 	"github.com/dropbox/changes-artifacts/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -22,33 +22,33 @@ func TestCreateBucket(t *testing.T) {
 
 	// Bad request
 	_, err = CreateBucket(mockdb, mockClock, "", "owner")
-	assert.Error(t, err)
+	require.Error(t, err)
 
 	_, err = CreateBucket(mockdb, mockClock, "id", "")
-	assert.Error(t, err)
+	require.Error(t, err)
 
 	// DB error
 	mockdb.On("GetBucket", "id").Return(nil, database.WrapInternalDatabaseError(fmt.Errorf("Internal Error"))).Once()
 	_, err = CreateBucket(mockdb, mockClock, "id", "owner")
-	assert.Error(t, err)
+	require.Error(t, err)
 
 	// Entity exists
 	mockdb.On("GetBucket", "id").Return(&model.Bucket{}, nil).Once()
 	_, err = CreateBucket(mockdb, mockClock, "id", "owner")
-	assert.Error(t, err)
+	require.Error(t, err)
 
 	// DB error while creating bucket
 	mockdb.On("GetBucket", "id").Return(nil, database.NewEntityNotFoundError("ENF")).Once()
 	mockdb.On("InsertBucket", mock.AnythingOfType("*model.Bucket")).Return(database.WrapInternalDatabaseError(fmt.Errorf("INT"))).Once()
 	_, err = CreateBucket(mockdb, mockClock, "id", "owner")
-	assert.Error(t, err)
+	require.Error(t, err)
 
 	// Successfully created bucket
 	mockdb.On("GetBucket", "id").Return(nil, database.NewEntityNotFoundError("ENF")).Once()
 	mockdb.On("InsertBucket", mock.AnythingOfType("*model.Bucket")).Return(nil).Once()
 	bucket, err := CreateBucket(mockdb, mockClock, "id", "owner")
-	assert.NoError(t, err)
-	assert.NotNil(t, bucket)
+	require.NoError(t, err)
+	require.NotNil(t, bucket)
 
 	mockdb.AssertExpectations(t)
 }
@@ -61,27 +61,27 @@ func TestCloseBucket(t *testing.T) {
 
 	// If bucket is not currently open, return failure
 	bucket := &model.Bucket{State: model.CLOSED}
-	assert.Error(t, CloseBucket(nil, bucket, mockdb, nil, nil))
+	require.Error(t, CloseBucket(nil, bucket, mockdb, nil, nil))
 
 	bucket_id := "bucket_id_1"
 
 	// If DB throws error in any step, return failure
 	bucket = &model.Bucket{State: model.OPEN, Id: bucket_id}
 	mockdb.On("UpdateBucket", bucket).Return(database.WrapInternalDatabaseError(fmt.Errorf("foo"))).Once()
-	assert.Error(t, CloseBucket(nil, bucket, mockdb, nil, mockClock))
+	require.Error(t, CloseBucket(nil, bucket, mockdb, nil, mockClock))
 
 	bucket = &model.Bucket{State: model.OPEN, Id: bucket_id}
 	mockdb.On("UpdateBucket", bucket).Return(nil).Once()
 	mockdb.On("ListArtifactsInBucket", bucket.Id).Return(nil, database.WrapInternalDatabaseError(fmt.Errorf("err"))).Once()
-	assert.Error(t, CloseBucket(nil, bucket, mockdb, nil, mockClock))
+	require.Error(t, CloseBucket(nil, bucket, mockdb, nil, mockClock))
 
 	// Closing bucket with no artifacts successfully. Verify bucket state and dateclosed.
 	bucket = &model.Bucket{State: model.OPEN, Id: bucket_id}
 	mockdb.On("UpdateBucket", bucket).Return(nil).Once()
 	mockdb.On("ListArtifactsInBucket", bucket.Id).Return([]model.Artifact{}, nil).Once()
-	assert.NoError(t, CloseBucket(nil, bucket, mockdb, nil, mockClock))
-	assert.Equal(t, model.CLOSED, bucket.State)
-	assert.Equal(t, mockClock.Now(), bucket.DateClosed)
+	require.NoError(t, CloseBucket(nil, bucket, mockdb, nil, mockClock))
+	require.Equal(t, model.CLOSED, bucket.State)
+	require.Equal(t, mockClock.Now(), bucket.DateClosed)
 
 	// Closing bucket with no artifacts successfully. Verify bucket state and dateclosed.
 	bucket = &model.Bucket{State: model.OPEN, Id: bucket_id}
@@ -89,9 +89,9 @@ func TestCloseBucket(t *testing.T) {
 	mockdb.On("UpdateBucket", bucket).Return(nil).Once()
 	mockdb.On("ListArtifactsInBucket", bucket.Id).Return([]model.Artifact{artifact}, nil).Once()
 
-	assert.NoError(t, CloseBucket(nil, bucket, mockdb, nil, mockClock))
-	assert.Equal(t, model.CLOSED, bucket.State)
-	assert.Equal(t, mockClock.Now(), bucket.DateClosed)
+	require.NoError(t, CloseBucket(nil, bucket, mockdb, nil, mockClock))
+	require.Equal(t, model.CLOSED, bucket.State)
+	require.Equal(t, mockClock.Now(), bucket.DateClosed)
 
 	mockdb.AssertExpectations(t)
 }

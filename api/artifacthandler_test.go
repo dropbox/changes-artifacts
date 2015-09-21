@@ -14,7 +14,7 @@ import (
 	"github.com/dropbox/changes-artifacts/common/sentry"
 	"github.com/dropbox/changes-artifacts/database"
 	"github.com/dropbox/changes-artifacts/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -51,8 +51,8 @@ func TestCreateArtifact(t *testing.T) {
 	artifact, err = CreateArtifact(CreateArtifactReq{}, &model.Bucket{
 		State: model.CLOSED,
 	}, mockdb)
-	assert.Error(t, err)
-	assert.Nil(t, artifact)
+	require.Error(t, err)
+	require.Nil(t, artifact)
 
 	// Create artifact in closed bucket
 	artifact, err = CreateArtifact(CreateArtifactReq{
@@ -60,8 +60,8 @@ func TestCreateArtifact(t *testing.T) {
 	}, &model.Bucket{
 		State: model.CLOSED,
 	}, mockdb)
-	assert.Error(t, err)
-	assert.Nil(t, artifact)
+	require.Error(t, err)
+	require.Nil(t, artifact)
 
 	// Duplicate artifact name
 	mockdb.On("GetArtifactByName", "bName", "aName").Return(&model.Artifact{}, nil).Once()
@@ -71,8 +71,8 @@ func TestCreateArtifact(t *testing.T) {
 		State: model.OPEN,
 		Id:    "bName",
 	}, mockdb)
-	assert.Error(t, err)
-	assert.Nil(t, artifact)
+	require.Error(t, err)
+	require.Nil(t, artifact)
 
 	// ---------- BEGIN Streamed artifact creation --------------
 	mockdb.On("GetArtifactByName", "bName", "aName").Return(nil, database.NewEntityNotFoundError("Notfound")).Once()
@@ -84,8 +84,8 @@ func TestCreateArtifact(t *testing.T) {
 		State: model.OPEN,
 		Id:    "bName",
 	}, mockdb)
-	assert.Error(t, err)
-	assert.Nil(t, artifact)
+	require.Error(t, err)
+	require.Nil(t, artifact)
 
 	// Fail on inserting into DB
 	mockdb.On("GetArtifactByName", "bName", "aName").Return(nil, database.NewEntityNotFoundError("Notfound")).Once()
@@ -98,8 +98,8 @@ func TestCreateArtifact(t *testing.T) {
 		State: model.OPEN,
 		Id:    "bName",
 	}, mockdb)
-	assert.Error(t, err)
-	assert.Nil(t, artifact)
+	require.Error(t, err)
+	require.Nil(t, artifact)
 
 	// Successfully create artifact
 	mockdb.On("GetArtifactByName", "bName", "aName").Return(nil, database.NewEntityNotFoundError("Notfound")).Once()
@@ -112,12 +112,12 @@ func TestCreateArtifact(t *testing.T) {
 		State: model.OPEN,
 		Id:    "bName",
 	}, mockdb)
-	assert.NoError(t, err)
-	assert.NotNil(t, artifact)
-	assert.Equal(t, "aName", artifact.Name)
-	assert.Equal(t, "bName", artifact.BucketId)
-	assert.Equal(t, model.WAITING_FOR_UPLOAD, artifact.State)
-	assert.Equal(t, int64(10), artifact.Size)
+	require.NoError(t, err)
+	require.NotNil(t, artifact)
+	require.Equal(t, "aName", artifact.Name)
+	require.Equal(t, "bName", artifact.BucketId)
+	require.Equal(t, model.WAITING_FOR_UPLOAD, artifact.State)
+	require.Equal(t, int64(10), artifact.Size)
 	// ---------- END Streamed artifact creation --------------
 
 	// ---------- BEGIN Chunked artifact creation --------------
@@ -131,8 +131,8 @@ func TestCreateArtifact(t *testing.T) {
 		State: model.OPEN,
 		Id:    "bName",
 	}, mockdb)
-	assert.Error(t, err)
-	assert.Nil(t, artifact)
+	require.Error(t, err)
+	require.Nil(t, artifact)
 
 	// Successfully create artifact
 	mockdb.On("GetArtifactByName", "bName", "aName").Return(nil, database.NewEntityNotFoundError("Notfound")).Once()
@@ -145,12 +145,12 @@ func TestCreateArtifact(t *testing.T) {
 		State: model.OPEN,
 		Id:    "bName",
 	}, mockdb)
-	assert.NoError(t, err)
-	assert.NotNil(t, artifact)
-	assert.Equal(t, "aName", artifact.Name)
-	assert.Equal(t, "bName", artifact.BucketId)
-	assert.Equal(t, model.APPENDING, artifact.State)
-	assert.Equal(t, int64(0), artifact.Size)
+	require.NoError(t, err)
+	require.NotNil(t, artifact)
+	require.Equal(t, "aName", artifact.Name)
+	require.Equal(t, "bName", artifact.BucketId)
+	require.Equal(t, model.APPENDING, artifact.State)
+	require.Equal(t, int64(0), artifact.Size)
 	// ---------- END Streamed artifact creation --------------
 
 	mockdb.AssertExpectations(t)
@@ -160,19 +160,19 @@ func TestAppendLogChunk(t *testing.T) {
 	mockdb := &database.MockDatabase{}
 
 	// Already completed artifact
-	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
+	require.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPEND_COMPLETE,
 	}, nil))
 
 	// Size 0 chunk
-	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
+	require.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 	}, &model.LogChunk{
 		Size: 0,
 	}))
 
 	// Blank string chunk
-	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
+	require.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 	}, &model.LogChunk{
 		Size:    1,
@@ -180,7 +180,7 @@ func TestAppendLogChunk(t *testing.T) {
 	}))
 
 	// Mismatch between size and content chunk
-	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
+	require.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 	}, &model.LogChunk{
 		Size:    1,
@@ -194,7 +194,7 @@ func TestAppendLogChunk(t *testing.T) {
 
 	// DB Error while trying to find where the next byte is expected
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(0), database.MockDatabaseError()).Once()
-	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
+	require.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
 	}, logChunk))
@@ -202,7 +202,7 @@ func TestAppendLogChunk(t *testing.T) {
 	// Last logchunk was repeated.
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(2), nil).Once()
 	mockdb.On("GetLastLogChunkSeenForArtifact", int64(10)).Return(&model.LogChunk{Size: 2, Content: "ab"}, nil).Once()
-	assert.NoError(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
+	require.NoError(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
 	}, logChunk))
@@ -210,14 +210,14 @@ func TestAppendLogChunk(t *testing.T) {
 	// Unexpected logchunk
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(2), nil).Once()
 	mockdb.On("GetLastLogChunkSeenForArtifact", int64(10)).Return(&model.LogChunk{Size: 3}, nil).Once()
-	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
+	require.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
 	}, logChunk))
 
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(0), nil).Once()
 	mockdb.On("UpdateArtifact", mock.AnythingOfType("*model.Artifact")).Return(database.MockDatabaseError()).Once()
-	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
+	require.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
 	}, logChunk))
@@ -225,7 +225,7 @@ func TestAppendLogChunk(t *testing.T) {
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(0), nil).Once()
 	mockdb.On("UpdateArtifact", mock.AnythingOfType("*model.Artifact")).Return(nil).Once()
 	mockdb.On("InsertLogChunk", logChunk).Return(database.MockDatabaseError()).Once()
-	assert.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
+	require.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
 	}, logChunk))
@@ -233,7 +233,7 @@ func TestAppendLogChunk(t *testing.T) {
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(0), nil).Once()
 	mockdb.On("UpdateArtifact", mock.AnythingOfType("*model.Artifact")).Return(nil).Once()
 	mockdb.On("InsertLogChunk", logChunk).Return(nil).Once()
-	assert.NoError(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
+	require.NoError(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
 	}, logChunk))
@@ -243,25 +243,25 @@ func TestAppendLogChunk(t *testing.T) {
 
 func TestPutArtifactErrorChecks(t *testing.T) {
 	// Chunked artifacts
-	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.APPENDING}, nil, nil, PutArtifactReq{}))
-	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.APPEND_COMPLETE}, nil, nil, PutArtifactReq{}))
+	require.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.APPENDING}, nil, nil, PutArtifactReq{}))
+	require.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.APPEND_COMPLETE}, nil, nil, PutArtifactReq{}))
 
 	// Already being uploaded elsewhere
-	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.UPLOADING}, nil, nil, PutArtifactReq{}))
+	require.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.UPLOADING}, nil, nil, PutArtifactReq{}))
 
 	// Already completed upload
-	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.UPLOADED}, nil, nil, PutArtifactReq{}))
+	require.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.UPLOADED}, nil, nil, PutArtifactReq{}))
 
-	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.WAITING_FOR_UPLOAD}, nil, nil, PutArtifactReq{
+	require.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.WAITING_FOR_UPLOAD}, nil, nil, PutArtifactReq{
 		ContentLength: "",
 	}))
 
-	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.WAITING_FOR_UPLOAD}, nil, nil, PutArtifactReq{
+	require.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.WAITING_FOR_UPLOAD}, nil, nil, PutArtifactReq{
 		ContentLength: "foo",
 	}))
 
 	// Size mismatch
-	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.WAITING_FOR_UPLOAD, Size: 10}, nil, nil, PutArtifactReq{
+	require.Error(t, PutArtifact(context.Background(), &model.Artifact{State: model.WAITING_FOR_UPLOAD, Size: 10}, nil, nil, PutArtifactReq{
 		ContentLength: "20",
 	}))
 }
@@ -287,7 +287,7 @@ func TestPutArtifactToS3Successfully(t *testing.T) {
 	}).Return(nil).Once()
 
 	s3Server, s3Bucket := createS3Bucket(t)
-	assert.NoError(t, PutArtifact(context.Background(), &model.Artifact{
+	require.NoError(t, PutArtifact(context.Background(), &model.Artifact{
 		State:    model.WAITING_FOR_UPLOAD,
 		Size:     10,
 		Name:     "TestPutArtifact__artifactName",
@@ -326,7 +326,7 @@ func TestPutArtifactToS3WithS3Errors(t *testing.T) {
 	// between different s3 errors. So, this should handle all cases.
 	s3Server.Quit()
 
-	assert.Error(t, PutArtifact(context.Background(), &model.Artifact{
+	require.Error(t, PutArtifact(context.Background(), &model.Artifact{
 		State:    model.WAITING_FOR_UPLOAD,
 		Size:     10,
 		Name:     "TestPutArtifact__artifactName",
@@ -343,22 +343,22 @@ func TestMergeLogChunks(t *testing.T) {
 	mockdb := &database.MockDatabase{}
 
 	// Merging log chunks not valid in following states
-	assert.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.WAITING_FOR_UPLOAD}, mockdb, nil))
-	assert.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.APPENDING}, mockdb, nil))
-	assert.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.UPLOADED}, mockdb, nil))
-	assert.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.UPLOADING}, mockdb, nil))
+	require.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.WAITING_FOR_UPLOAD}, mockdb, nil))
+	require.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.APPENDING}, mockdb, nil))
+	require.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.UPLOADED}, mockdb, nil))
+	require.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.UPLOADING}, mockdb, nil))
 
 	// Closing an empty artifact with no errors
 	mockdb.On("UpdateArtifact", &model.Artifact{
 		State: model.CLOSED_WITHOUT_DATA,
 	}).Return(nil).Once()
-	assert.NoError(t, MergeLogChunks(nil, &model.Artifact{State: model.APPEND_COMPLETE, Size: 0}, mockdb, nil))
+	require.NoError(t, MergeLogChunks(nil, &model.Artifact{State: model.APPEND_COMPLETE, Size: 0}, mockdb, nil))
 
 	// Closing an empty artifact with db errors
 	mockdb.On("UpdateArtifact", &model.Artifact{
 		State: model.CLOSED_WITHOUT_DATA,
 	}).Return(database.MockDatabaseError()).Once()
-	assert.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.APPEND_COMPLETE, Size: 0}, mockdb, nil))
+	require.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.APPEND_COMPLETE, Size: 0}, mockdb, nil))
 
 	// ----- BEGIN Closing an artifact with some log chunks
 	// DB Error while updating artifact
@@ -366,7 +366,7 @@ func TestMergeLogChunks(t *testing.T) {
 		State: model.UPLOADING,
 		Size:  10,
 	}).Return(database.MockDatabaseError()).Once()
-	assert.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.APPEND_COMPLETE, Size: 10}, mockdb, nil))
+	require.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.APPEND_COMPLETE, Size: 10}, mockdb, nil))
 
 	// DB Error while fetching logchunks
 	mockdb.On("UpdateArtifact", &model.Artifact{
@@ -375,7 +375,7 @@ func TestMergeLogChunks(t *testing.T) {
 		Size:  10,
 	}).Return(nil).Once()
 	mockdb.On("ListLogChunksInArtifact", int64(2)).Return(nil, database.MockDatabaseError()).Once()
-	assert.Error(t, MergeLogChunks(nil, &model.Artifact{Id: 2, State: model.APPEND_COMPLETE, Size: 10}, mockdb, nil))
+	require.Error(t, MergeLogChunks(nil, &model.Artifact{Id: 2, State: model.APPEND_COMPLETE, Size: 10}, mockdb, nil))
 
 	// Stitching chunks and uploading to S3 successfully (but deleting logchunks fail)
 	mockdb.On("UpdateArtifact", &model.Artifact{
@@ -399,7 +399,7 @@ func TestMergeLogChunks(t *testing.T) {
 	}).Return(nil).Once()
 	mockdb.On("DeleteLogChunksForArtifact", int64(2)).Return(int64(0), database.MockDatabaseError()).Once()
 	s3Server, s3Bucket := createS3Bucket(t)
-	assert.NoError(t, MergeLogChunks(sentry.CreateAndInstallSentryClient(context.TODO(), "", ""),
+	require.NoError(t, MergeLogChunks(sentry.CreateAndInstallSentryClient(context.TODO(), "", ""),
 		&model.Artifact{
 			Id:       2,
 			State:    model.APPEND_COMPLETE,
@@ -431,7 +431,7 @@ func TestMergeLogChunks(t *testing.T) {
 		Size:     10,
 	}).Return(nil).Once()
 	s3Server, s3Bucket = createS3Bucket(t)
-	assert.NoError(t, MergeLogChunks(nil, &model.Artifact{
+	require.NoError(t, MergeLogChunks(nil, &model.Artifact{
 		Id:       3,
 		State:    model.APPEND_COMPLETE,
 		Size:     10,

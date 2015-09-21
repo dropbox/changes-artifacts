@@ -13,7 +13,7 @@ import (
 	"github.com/dropbox/changes-artifacts/database"
 	"github.com/dropbox/changes-artifacts/model"
 	_ "github.com/lib/pq"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setup(t *testing.T) *ArtifactStoreClient {
@@ -73,35 +73,35 @@ func TestCreateAndGetBucket(t *testing.T) {
 	var err error
 
 	bucket, err = client.NewBucket("", "ownername", 31)
-	assert.Nil(t, bucket)
-	assert.Error(t, err)
+	require.Nil(t, bucket)
+	require.Error(t, err)
 
 	bucket, err = client.NewBucket("bucketname", "", 31)
-	assert.Nil(t, bucket)
-	assert.Error(t, err)
+	require.Nil(t, bucket)
+	require.Error(t, err)
 
 	bucket, err = client.NewBucket("bucketname", "ownername", 31)
-	assert.NotNil(t, bucket)
-	assert.Equal(t, "bucketname", bucket.bucket.Id)
-	assert.Equal(t, "ownername", bucket.bucket.Owner)
-	assert.Equal(t, model.OPEN, bucket.bucket.State)
-	assert.NoError(t, err)
+	require.NotNil(t, bucket)
+	require.Equal(t, "bucketname", bucket.bucket.Id)
+	require.Equal(t, "ownername", bucket.bucket.Owner)
+	require.Equal(t, model.OPEN, bucket.bucket.State)
+	require.NoError(t, err)
 
 	// Duplicate
 	bucket, err = client.NewBucket("bucketname", "ownername", 31)
-	assert.Nil(t, bucket)
-	assert.Error(t, err)
+	require.Nil(t, bucket)
+	require.Error(t, err)
 
 	bucket, err = client.GetBucket("bucketname")
-	assert.NotNil(t, bucket)
-	assert.Equal(t, "bucketname", bucket.bucket.Id)
-	assert.Equal(t, "ownername", bucket.bucket.Owner)
-	assert.Equal(t, model.OPEN, bucket.bucket.State)
-	assert.NoError(t, err)
+	require.NotNil(t, bucket)
+	require.Equal(t, "bucketname", bucket.bucket.Id)
+	require.Equal(t, "ownername", bucket.bucket.Owner)
+	require.Equal(t, model.OPEN, bucket.bucket.State)
+	require.NoError(t, err)
 
 	bucket, err = client.GetBucket("bucketnotfound")
-	assert.Nil(t, bucket)
-	assert.Error(t, err)
+	require.Nil(t, bucket)
+	require.Error(t, err)
 }
 
 func TestCreateAndGetChunkedArtifact(t *testing.T) {
@@ -120,33 +120,33 @@ func TestCreateAndGetChunkedArtifact(t *testing.T) {
 	var err error
 
 	bucket, err = client.NewBucket(bucketName, ownerName, 31)
-	assert.NotNil(t, bucket)
-	assert.NoError(t, err)
+	require.NotNil(t, bucket)
+	require.NoError(t, err)
 
 	artifact, err = bucket.NewChunkedArtifact(artifactName)
-	assert.NotNil(t, artifact)
-	assert.Equal(t, artifactName, artifact.GetArtifactModel().Name)
-	assert.Equal(t, model.APPENDING, artifact.GetArtifactModel().State)
-	// assert.Equal will crib if the types are not identical.
-	assert.Equal(t, int64(0), artifact.GetArtifactModel().Size)
-	assert.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
-	assert.Empty(t, artifact.GetArtifactModel().S3URL)
-	assert.NoError(t, err)
+	require.NotNil(t, artifact)
+	require.Equal(t, artifactName, artifact.GetArtifactModel().Name)
+	require.Equal(t, model.APPENDING, artifact.GetArtifactModel().State)
+	// require.Equal will crib if the types are not identical.
+	require.Equal(t, int64(0), artifact.GetArtifactModel().Size)
+	require.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
+	require.Empty(t, artifact.GetArtifactModel().S3URL)
+	require.NoError(t, err)
 
 	// Duplicate
 	artifact, err = bucket.NewChunkedArtifact(artifactName)
-	assert.Nil(t, artifact)
-	assert.Error(t, err)
+	require.Nil(t, artifact)
+	require.Error(t, err)
 
 	artifact, err = bucket.GetArtifact(artifactName)
-	assert.NotNil(t, artifact)
-	assert.Equal(t, artifactName, artifact.GetArtifactModel().Name)
-	assert.Equal(t, model.APPENDING, artifact.GetArtifactModel().State)
-	// assert.Equal will crib if the types are not identical.
-	assert.Equal(t, int64(0), artifact.GetArtifactModel().Size)
-	assert.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
-	assert.Empty(t, artifact.GetArtifactModel().S3URL)
-	assert.NoError(t, err)
+	require.NotNil(t, artifact)
+	require.Equal(t, artifactName, artifact.GetArtifactModel().Name)
+	require.Equal(t, model.APPENDING, artifact.GetArtifactModel().State)
+	// require.Equal will crib if the types are not identical.
+	require.Equal(t, int64(0), artifact.GetArtifactModel().Size)
+	require.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
+	require.Empty(t, artifact.GetArtifactModel().S3URL)
+	require.NoError(t, err)
 }
 
 func TestCreateAndGetStreamedArtifact(t *testing.T) {
@@ -166,31 +166,31 @@ func TestCreateAndGetStreamedArtifact(t *testing.T) {
 	var err error
 
 	bucket, err = client.NewBucket(bucketName, ownerName, 31)
-	assert.NotNil(t, bucket)
-	assert.NoError(t, err)
+	require.NotNil(t, bucket)
+	require.NoError(t, err)
 
 	artifact, err = bucket.NewStreamedArtifact(artifactName, fileSize)
-	assert.NotNil(t, artifact)
-	assert.Equal(t, artifactName, artifact.GetArtifactModel().Name)
-	assert.Equal(t, model.WAITING_FOR_UPLOAD, artifact.GetArtifactModel().State)
-	assert.Equal(t, fileSize, artifact.GetArtifactModel().Size)
-	assert.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
-	assert.Empty(t, artifact.GetArtifactModel().S3URL)
-	assert.NoError(t, err)
+	require.NotNil(t, artifact)
+	require.Equal(t, artifactName, artifact.GetArtifactModel().Name)
+	require.Equal(t, model.WAITING_FOR_UPLOAD, artifact.GetArtifactModel().State)
+	require.Equal(t, fileSize, artifact.GetArtifactModel().Size)
+	require.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
+	require.Empty(t, artifact.GetArtifactModel().S3URL)
+	require.NoError(t, err)
 
 	// Duplicate
 	artifact, err = bucket.NewChunkedArtifact(artifactName)
-	assert.Nil(t, artifact)
-	assert.Error(t, err)
+	require.Nil(t, artifact)
+	require.Error(t, err)
 
 	artifact, err = bucket.GetArtifact(artifactName)
-	assert.NotNil(t, artifact)
-	assert.Equal(t, artifactName, artifact.GetArtifactModel().Name)
-	assert.Equal(t, model.WAITING_FOR_UPLOAD, artifact.GetArtifactModel().State)
-	assert.Equal(t, fileSize, artifact.GetArtifactModel().Size)
-	assert.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
-	assert.Empty(t, artifact.GetArtifactModel().S3URL)
-	assert.NoError(t, err)
+	require.NotNil(t, artifact)
+	require.Equal(t, artifactName, artifact.GetArtifactModel().Name)
+	require.Equal(t, model.WAITING_FOR_UPLOAD, artifact.GetArtifactModel().State)
+	require.Equal(t, fileSize, artifact.GetArtifactModel().Size)
+	require.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
+	require.Empty(t, artifact.GetArtifactModel().S3URL)
+	require.NoError(t, err)
 }
 
 func TestCloseBucket(t *testing.T) {
@@ -211,58 +211,58 @@ func TestCloseBucket(t *testing.T) {
 	var err error
 
 	bucket, err = client.NewBucket(bucketName, ownerName, 31)
-	assert.NotNil(t, bucket)
-	assert.NoError(t, err)
+	require.NotNil(t, bucket)
+	require.NoError(t, err)
 
 	artifact, err = bucket.NewChunkedArtifact(chunkedArtifactName)
-	assert.NotNil(t, artifact)
-	assert.NoError(t, err)
+	require.NotNil(t, artifact)
+	require.NoError(t, err)
 
 	artifact, err = bucket.NewStreamedArtifact(streamedArtifactName, fileSize)
-	assert.NotNil(t, artifact)
-	assert.NoError(t, err)
+	require.NotNil(t, artifact)
+	require.NoError(t, err)
 
-	assert.NoError(t, bucket.Close())
+	require.NoError(t, bucket.Close())
 
 	// Verify bucket is closed
 	bucket, err = client.GetBucket(bucketName)
-	assert.NotNil(t, bucket)
-	assert.Equal(t, bucketName, bucket.bucket.Id)
-	assert.Equal(t, ownerName, bucket.bucket.Owner)
-	assert.Equal(t, model.CLOSED, bucket.bucket.State)
-	assert.NoError(t, err)
+	require.NotNil(t, bucket)
+	require.Equal(t, bucketName, bucket.bucket.Id)
+	require.Equal(t, ownerName, bucket.bucket.Owner)
+	require.Equal(t, model.CLOSED, bucket.bucket.State)
+	require.NoError(t, err)
 
 	// Verify chunked artifact is closed
 	artifact, err = bucket.GetArtifact(chunkedArtifactName)
-	assert.NotNil(t, artifact)
-	assert.Equal(t, chunkedArtifactName, artifact.GetArtifactModel().Name)
+	require.NotNil(t, artifact)
+	require.Equal(t, chunkedArtifactName, artifact.GetArtifactModel().Name)
 	// Since we didn't write any content to the streamed artifact, it should be closed without data.
-	assert.Equal(t, model.CLOSED_WITHOUT_DATA, artifact.GetArtifactModel().State)
-	// assert.Equal will crib if the types are not identical.
-	assert.Equal(t, int64(0), artifact.GetArtifactModel().Size)
-	assert.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
-	assert.Empty(t, artifact.GetArtifactModel().S3URL)
-	assert.NoError(t, err)
+	require.Equal(t, model.CLOSED_WITHOUT_DATA, artifact.GetArtifactModel().State)
+	// require.Equal will crib if the types are not identical.
+	require.Equal(t, int64(0), artifact.GetArtifactModel().Size)
+	require.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
+	require.Empty(t, artifact.GetArtifactModel().S3URL)
+	require.NoError(t, err)
 
 	// Verify streamed artifact is closed
 	artifact, err = bucket.GetArtifact(streamedArtifactName)
-	assert.NotNil(t, artifact)
-	assert.Equal(t, streamedArtifactName, artifact.GetArtifactModel().Name)
-	assert.Equal(t, model.CLOSED_WITHOUT_DATA, artifact.GetArtifactModel().State)
-	assert.Equal(t, fileSize, artifact.GetArtifactModel().Size)
-	assert.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
-	assert.Empty(t, artifact.GetArtifactModel().S3URL)
-	assert.NoError(t, err)
+	require.NotNil(t, artifact)
+	require.Equal(t, streamedArtifactName, artifact.GetArtifactModel().Name)
+	require.Equal(t, model.CLOSED_WITHOUT_DATA, artifact.GetArtifactModel().State)
+	require.Equal(t, fileSize, artifact.GetArtifactModel().Size)
+	require.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
+	require.Empty(t, artifact.GetArtifactModel().S3URL)
+	require.NoError(t, err)
 
 	// Adding artifacts to a closed bucket
 	artifact, err = bucket.NewChunkedArtifact("artifact")
-	assert.Nil(t, artifact)
-	assert.Error(t, err)
+	require.Nil(t, artifact)
+	require.Error(t, err)
 
 	// Adding artifacts to a closed bucket
 	artifact, err = bucket.NewStreamedArtifact("artifact", 200)
-	assert.Nil(t, artifact)
-	assert.Error(t, err)
+	require.Nil(t, artifact)
+	require.Error(t, err)
 }
 
 func TestAppendToChunkedArtifact(t *testing.T) {
@@ -282,51 +282,51 @@ func TestAppendToChunkedArtifact(t *testing.T) {
 	var err error
 
 	bucket, err = client.NewBucket(bucketName, ownerName, 31)
-	assert.NotNil(t, bucket)
-	assert.NoError(t, err)
+	require.NotNil(t, bucket)
+	require.NoError(t, err)
 
 	cartifact, err = bucket.NewChunkedArtifact(artifactName)
-	assert.NotNil(t, cartifact)
-	assert.NoError(t, err)
+	require.NotNil(t, cartifact)
+	require.NoError(t, err)
 
 	// Append chunk to artifact.
-	assert.NoError(t, cartifact.AppendLog("0123456789"))
+	require.NoError(t, cartifact.AppendLog("0123456789"))
 
 	// Append another chunk to artifact.
-	assert.NoError(t, cartifact.AppendLog("9876543210"))
+	require.NoError(t, cartifact.AppendLog("9876543210"))
 
 	// Flush and verify contents.
-	assert.NoError(t, cartifact.Flush())
+	require.NoError(t, cartifact.Flush())
 
 	artifact, err = bucket.GetArtifact(artifactName)
-	assert.NotNil(t, artifact)
-	assert.Equal(t, model.APPENDING, artifact.GetArtifactModel().State)
-	// assert.Equal will crib if the types are not identical.
-	assert.Equal(t, int64(20), artifact.GetArtifactModel().Size)
-	assert.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
-	assert.Empty(t, artifact.GetArtifactModel().S3URL)
-	assert.NoError(t, err)
+	require.NotNil(t, artifact)
+	require.Equal(t, model.APPENDING, artifact.GetArtifactModel().State)
+	// require.Equal will crib if the types are not identical.
+	require.Equal(t, int64(20), artifact.GetArtifactModel().Size)
+	require.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
+	require.Empty(t, artifact.GetArtifactModel().S3URL)
+	require.NoError(t, err)
 
 	// Append yet another chunk to artifact.
-	assert.NoError(t, cartifact.AppendLog("9876543210"))
+	require.NoError(t, cartifact.AppendLog("9876543210"))
 	// Close the artifact
-	assert.NoError(t, cartifact.Close())
+	require.NoError(t, cartifact.Close())
 
 	// Verify it exists on S3
 	artifact, err = bucket.GetArtifact(artifactName)
-	assert.NotNil(t, artifact)
-	assert.Equal(t, model.UPLOADED, artifact.GetArtifactModel().State)
-	// assert.Equal will crib if the types are not identical.
-	assert.Equal(t, int64(30), artifact.GetArtifactModel().Size)
-	assert.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
-	assert.Equal(t, fmt.Sprintf("/%s/%s", bucketName, artifactName), artifact.GetArtifactModel().S3URL)
-	assert.NoError(t, err)
+	require.NotNil(t, artifact)
+	require.Equal(t, model.UPLOADED, artifact.GetArtifactModel().State)
+	// require.Equal will crib if the types are not identical.
+	require.Equal(t, int64(30), artifact.GetArtifactModel().Size)
+	require.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
+	require.Equal(t, fmt.Sprintf("/%s/%s", bucketName, artifactName), artifact.GetArtifactModel().S3URL)
+	require.NoError(t, err)
 
 	content, err := cartifact.GetContent()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	var buf bytes.Buffer
 	buf.ReadFrom(content)
-	assert.Equal(t, 30, buf.Len())
+	require.Equal(t, 30, buf.Len())
 }
 
 func TestPostStreamedArtifact(t *testing.T) {
@@ -346,32 +346,32 @@ func TestPostStreamedArtifact(t *testing.T) {
 	var err error
 
 	bucket, err = client.NewBucket(bucketName, ownerName, 31)
-	assert.NotNil(t, bucket)
-	assert.NoError(t, err)
+	require.NotNil(t, bucket)
+	require.NoError(t, err)
 
 	streamedArtifact, err = bucket.NewStreamedArtifact(artifactName, 30)
-	assert.NotNil(t, streamedArtifact)
-	assert.NoError(t, err)
+	require.NotNil(t, streamedArtifact)
+	require.NoError(t, err)
 
 	rd := bytes.NewReader([]byte("012345678998765432100123456789"))
 	// Append chunk to artifact.
-	assert.NoError(t, streamedArtifact.UploadArtifact(rd))
+	require.NoError(t, streamedArtifact.UploadArtifact(rd))
 
 	artifact, err = bucket.GetArtifact(artifactName)
-	assert.NotNil(t, artifact)
-	assert.Equal(t, model.UPLOADED, artifact.GetArtifactModel().State)
-	// assert.Equal will crib if the types are not identical.
-	assert.Equal(t, int64(30), artifact.GetArtifactModel().Size)
-	assert.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
-	assert.Equal(t, fmt.Sprintf("/%s/%s", bucketName, artifactName), artifact.GetArtifactModel().S3URL)
-	assert.NoError(t, err)
+	require.NotNil(t, artifact)
+	require.Equal(t, model.UPLOADED, artifact.GetArtifactModel().State)
+	// require.Equal will crib if the types are not identical.
+	require.Equal(t, int64(30), artifact.GetArtifactModel().Size)
+	require.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
+	require.Equal(t, fmt.Sprintf("/%s/%s", bucketName, artifactName), artifact.GetArtifactModel().S3URL)
+	require.NoError(t, err)
 
 	// Verify it exists on S3
 	content, err := streamedArtifact.GetContent()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	var buf bytes.Buffer
 	buf.ReadFrom(content)
-	assert.Equal(t, 30, buf.Len())
+	require.Equal(t, 30, buf.Len())
 }
 
 func TestCreateAndListArtifacts(t *testing.T) {
@@ -393,23 +393,23 @@ func TestCreateAndListArtifacts(t *testing.T) {
 	var artifacts []Artifact
 
 	bucket, err = client.NewBucket(bucketName, ownerName, 31)
-	assert.NotNil(t, bucket)
-	assert.NoError(t, err)
+	require.NotNil(t, bucket)
+	require.NoError(t, err)
 
 	streamedArtifact, err = bucket.NewStreamedArtifact(artifactName1, 30)
-	assert.NotNil(t, streamedArtifact)
-	assert.NoError(t, err)
+	require.NotNil(t, streamedArtifact)
+	require.NoError(t, err)
 
 	chunkedArtifact, err = bucket.NewChunkedArtifact(artifactName2)
-	assert.NotNil(t, chunkedArtifact)
-	assert.NoError(t, err)
+	require.NotNil(t, chunkedArtifact)
+	require.NoError(t, err)
 
 	artifacts, err = bucket.ListArtifacts()
-	assert.NotNil(t, artifacts)
-	assert.Nil(t, err)
-	assert.Len(t, artifacts, 2)
+	require.NotNil(t, artifacts)
+	require.Nil(t, err)
+	require.Len(t, artifacts, 2)
 
 	// We really shouldn't worry about order here.
-	assert.Equal(t, artifactName1, artifacts[0].GetArtifactModel().Name)
-	assert.Equal(t, artifactName2, artifacts[1].GetArtifactModel().Name)
+	require.Equal(t, artifactName1, artifacts[0].GetArtifactModel().Name)
+	require.Equal(t, artifactName2, artifacts[1].GetArtifactModel().Name)
 }
