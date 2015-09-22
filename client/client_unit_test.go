@@ -66,21 +66,6 @@ func TestGetBucketSuccessfully(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestNewStreamedArtifactWithWrongName(t *testing.T) {
-	ts := testserver.NewTestServer(t)
-	defer ts.CloseAndAssertExpectations()
-
-	client := NewArtifactStoreClient(ts.URL)
-
-	ts.ExpectAndRespond("POST", "/buckets/", http.StatusOK, `{"Id": "foo"}`)
-	ts.ExpectAndRespond("POST", "/buckets/foo/artifacts", http.StatusOK, `{"Name": "not_correct_name"}`)
-
-	b, _ := client.NewBucket("foo", "bar", 32)
-	sa, err := b.NewStreamedArtifact("artifact", 10)
-	require.Nil(t, sa)
-	require.Error(t, err)
-}
-
 func TestNewStreamedArtifactSuccessfully(t *testing.T) {
 	ts := testserver.NewTestServer(t)
 	defer ts.CloseAndAssertExpectations()

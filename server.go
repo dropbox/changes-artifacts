@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -174,6 +175,9 @@ func main() {
 
 	flag.Parse()
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
+
+	// Required for artifact name deduplication (not strictly necessary, but good to have)
+	rand.Seed(time.Now().UTC().UnixNano())
 
 	if *showVersion {
 		fmt.Println(common.GetVersion())

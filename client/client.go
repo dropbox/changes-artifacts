@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"golang.org/x/net/context"
@@ -253,14 +254,20 @@ func (b *Bucket) NewChunkedArtifact(name string) (*ChunkedArtifact, *ArtifactsEr
 	return (&ChunkedArtifact{ArtifactImpl: artifact.(*ArtifactImpl)}).init(), nil
 }
 
-// Creates a new streamed (fixed-size) artifact with the specified name (acting as an id)
-// and size. The artifact will only be complete when the server has received exactly
-// "size" bytes. This is only suitable for static content such as files.
-func (b *Bucket) NewStreamedArtifact(name string, size int64) (*StreamedArtifact, *ArtifactsError) {
+// NewStreamedArtifact creates a new streamed (fixed-size) artifact given a file path and size.
+// The artifact name (which serves as its id) is computed from the file name (this is a hint to the
+// server which is free to modify the artifact name).
+//
+// The artifact does not actually get uploaded here - that will need to be perfomeed in
+// UploadArtifact. The artifact will only be complete when the server has received exactly "size"
+// bytes. This is only suitable for static content such as files.
+func (b *Bucket) NewStreamedArtifact(path string, size int64) (*StreamedArtifact, *ArtifactsError) {
+	name := filepath.Base(path)
 	body, err := b.client.postAPIJSON(fmt.Sprintf("/buckets/%s/artifacts", b.bucket.Id), map[string]interface{}{
-		"chunked": false,
-		"name":    name,
-		"size":    size,
+		"chunked":      false,
+		"name":         name,
+		"size":         size,
+		"relativePath": path,
 	})
 
 	if err != nil {
@@ -271,10 +278,6 @@ func (b *Bucket) NewStreamedArtifact(name string, size int64) (*StreamedArtifact
 
 	if err != nil {
 		return nil, err
-	}
-
-	if artifact.GetArtifactModel().Name != name {
-		return nil, NewTerminalError("Streaming artifact created with wrong name")
 	}
 
 	return &StreamedArtifact{

@@ -8,7 +8,7 @@ go get -v ./...
 
 go run server.go -migrations-only
 
-go run server.go &
+go run server.go -verbose &
 sudo fakes3 -r /var/cache/fakes3 -p 4569 &
 
 go test -race -cover -v ./... | tee test.output | go-junit-report > junit.xml

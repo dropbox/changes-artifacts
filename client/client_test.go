@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -133,11 +135,6 @@ func TestCreateAndGetChunkedArtifact(t *testing.T) {
 	require.Empty(t, artifact.GetArtifactModel().S3URL)
 	require.NoError(t, err)
 
-	// Duplicate
-	artifact, err = bucket.NewChunkedArtifact(artifactName)
-	require.Nil(t, artifact)
-	require.Error(t, err)
-
 	artifact, err = bucket.GetArtifact(artifactName)
 	require.NotNil(t, artifact)
 	require.Equal(t, artifactName, artifact.GetArtifactModel().Name)
@@ -177,11 +174,6 @@ func TestCreateAndGetStreamedArtifact(t *testing.T) {
 	require.Equal(t, bucketName, artifact.GetArtifactModel().BucketId)
 	require.Empty(t, artifact.GetArtifactModel().S3URL)
 	require.NoError(t, err)
-
-	// Duplicate
-	artifact, err = bucket.NewChunkedArtifact(artifactName)
-	require.Nil(t, artifact)
-	require.Error(t, err)
 
 	artifact, err = bucket.GetArtifact(artifactName)
 	require.NotNil(t, artifact)
@@ -412,4 +404,54 @@ func TestCreateAndListArtifacts(t *testing.T) {
 	// We really shouldn't worry about order here.
 	require.Equal(t, artifactName1, artifacts[0].GetArtifactModel().Name)
 	require.Equal(t, artifactName2, artifacts[1].GetArtifactModel().Name)
+}
+
+func TestCreateDuplicateArtifactRace(t *testing.T) {
+	bucketName := "bucketName"
+	ownerName := "ownerName"
+	artifactName := "artifactName"
+
+	if testing.Short() {
+		t.Skip("Skipping end-to-end test in short mode.")
+	}
+
+	client := setup(t)
+
+	bucket, err := client.NewBucket(bucketName, ownerName, 31)
+	require.NotNil(t, bucket)
+	require.NoError(t, err)
+
+	// More parallelism will hit postgres connection limit.
+	// http://www.postgresql.org/docs/current/static/runtime-config-connection.html#GUC-MAX-CONNECTIONS
+	createdArtifactNames := make([]string, 20)
+
+	// Create many duplicates
+	var wg sync.WaitGroup
+
+	for i := range createdArtifactNames {
+		wg.Add(1)
+		go func(counter int) {
+			defer wg.Done()
+			artifact, e := bucket.NewStreamedArtifact(artifactName, 1)
+			require.NoError(t, e)
+			require.NotNil(t, artifact)
+			createdArtifactNames[counter] = artifact.GetArtifactModel().Name
+		}(i)
+	}
+
+	wg.Wait()
+
+	seen := make(map[string]bool)
+
+	for _, created := range createdArtifactNames {
+		if !strings.HasPrefix(created, artifactName) {
+			t.Fatalf("Expected created artifact name to have prefix '%s', got '%s'", artifactName, created)
+		}
+
+		if seen[created] {
+			t.Fatalf("Duplicate artifact name: %s", created)
+		} else {
+			seen[created] = true
+		}
+	}
 }

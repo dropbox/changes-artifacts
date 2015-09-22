@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"fmt"
+	"net/http"
 	"testing"
 
 	"golang.org/x/net/context"
@@ -14,8 +15,8 @@ import (
 	"github.com/dropbox/changes-artifacts/common/sentry"
 	"github.com/dropbox/changes-artifacts/database"
 	"github.com/dropbox/changes-artifacts/model"
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func createS3Bucket(t *testing.T) (*s3test.Server, *s3.Bucket) {
@@ -44,116 +45,157 @@ func createS3Bucket(t *testing.T) (*s3test.Server, *s3.Bucket) {
 func TestCreateArtifact(t *testing.T) {
 	mockdb := &database.MockDatabase{}
 
-	var artifact *model.Artifact
-	var err error
+	{
+		// Create artifact with no name
+		artifact, err := CreateArtifact(createArtifactReq{}, &model.Bucket{
+			State: model.CLOSED,
+		}, mockdb)
+		require.Nil(t, artifact)
+		require.Error(t, err)
+	}
 
-	// Create artifact with no name
-	artifact, err = CreateArtifact(CreateArtifactReq{}, &model.Bucket{
-		State: model.CLOSED,
-	}, mockdb)
-	require.Error(t, err)
-	require.Nil(t, artifact)
-
-	// Create artifact in closed bucket
-	artifact, err = CreateArtifact(CreateArtifactReq{
-		Name: "aName",
-	}, &model.Bucket{
-		State: model.CLOSED,
-	}, mockdb)
-	require.Error(t, err)
-	require.Nil(t, artifact)
-
-	// Duplicate artifact name
-	mockdb.On("GetArtifactByName", "bName", "aName").Return(&model.Artifact{}, nil).Once()
-	artifact, err = CreateArtifact(CreateArtifactReq{
-		Name: "aName",
-	}, &model.Bucket{
-		State: model.OPEN,
-		Id:    "bName",
-	}, mockdb)
-	require.Error(t, err)
-	require.Nil(t, artifact)
+	{
+		// Create artifact in closed bucket
+		artifact, err := CreateArtifact(createArtifactReq{
+			Name: "aName",
+		}, &model.Bucket{
+			State: model.CLOSED,
+		}, mockdb)
+		require.Nil(t, artifact)
+		require.Error(t, err)
+	}
 
 	// ---------- BEGIN Streamed artifact creation --------------
-	mockdb.On("GetArtifactByName", "bName", "aName").Return(nil, database.NewEntityNotFoundError("Notfound")).Once()
-	artifact, err = CreateArtifact(CreateArtifactReq{
-		Name:    "aName",
-		Size:    0, // Invalid size
-		Chunked: false,
-	}, &model.Bucket{
-		State: model.OPEN,
-		Id:    "bName",
-	}, mockdb)
-	require.Error(t, err)
-	require.Nil(t, artifact)
+	{
+		artifact, err := CreateArtifact(createArtifactReq{
+			Name:    "aName",
+			Size:    0, // Invalid size
+			Chunked: false,
+		}, &model.Bucket{
+			State: model.OPEN,
+			Id:    "bName",
+		}, mockdb)
+		require.Nil(t, artifact)
+		require.Error(t, err)
+	}
 
-	// Fail on inserting into DB
-	mockdb.On("GetArtifactByName", "bName", "aName").Return(nil, database.NewEntityNotFoundError("Notfound")).Once()
-	mockdb.On("InsertArtifact", mock.AnythingOfType("*model.Artifact")).Return(database.WrapInternalDatabaseError(fmt.Errorf("Err"))).Once()
-	artifact, err = CreateArtifact(CreateArtifactReq{
-		Name:    "aName",
-		Size:    10,
-		Chunked: false,
-	}, &model.Bucket{
-		State: model.OPEN,
-		Id:    "bName",
-	}, mockdb)
-	require.Error(t, err)
-	require.Nil(t, artifact)
+	{
+		// Fail inserting into DB once and also fail getting artifact
+		mockdb.On("InsertArtifact", mock.AnythingOfType("*model.Artifact")).Return(database.WrapInternalDatabaseError(fmt.Errorf("Err"))).Once()
+		mockdb.On("GetArtifactByName", "bName", "aName").Return(nil, database.WrapInternalDatabaseError(fmt.Errorf("Err"))).Once()
+		artifact, err := CreateArtifact(createArtifactReq{
+			Name:    "aName",
+			Size:    10,
+			Chunked: false,
+		}, &model.Bucket{
+			State: model.OPEN,
+			Id:    "bName",
+		}, mockdb)
+		require.Nil(t, artifact)
+		require.Error(t, err)
+		require.Equal(t, http.StatusInternalServerError, err.errCode)
+		mockdb.AssertExpectations(t)
+	}
 
-	// Successfully create artifact
-	mockdb.On("GetArtifactByName", "bName", "aName").Return(nil, database.NewEntityNotFoundError("Notfound")).Once()
-	mockdb.On("InsertArtifact", mock.AnythingOfType("*model.Artifact")).Return(nil).Once()
-	artifact, err = CreateArtifact(CreateArtifactReq{
-		Name:    "aName",
-		Size:    10,
-		Chunked: false,
-	}, &model.Bucket{
-		State: model.OPEN,
-		Id:    "bName",
-	}, mockdb)
-	require.NoError(t, err)
-	require.NotNil(t, artifact)
-	require.Equal(t, "aName", artifact.Name)
-	require.Equal(t, "bName", artifact.BucketId)
-	require.Equal(t, model.WAITING_FOR_UPLOAD, artifact.State)
-	require.Equal(t, int64(10), artifact.Size)
+	{
+		// Successfully create artifact
+		mockdb.On("InsertArtifact", mock.AnythingOfType("*model.Artifact")).Return(nil).Once()
+		artifact, err := CreateArtifact(createArtifactReq{
+			Name:    "aName",
+			Size:    10,
+			Chunked: false,
+		}, &model.Bucket{
+			State: model.OPEN,
+			Id:    "bName",
+		}, mockdb)
+		require.NoError(t, err)
+		require.NotNil(t, artifact)
+		require.Equal(t, "aName", artifact.Name)
+		require.Equal(t, "bName", artifact.BucketId)
+		require.Equal(t, model.WAITING_FOR_UPLOAD, artifact.State)
+		require.Equal(t, int64(10), artifact.Size)
+		mockdb.AssertExpectations(t)
+	}
 	// ---------- END Streamed artifact creation --------------
 
 	// ---------- BEGIN Chunked artifact creation --------------
-	// Fail on inserting into DB
-	mockdb.On("GetArtifactByName", "bName", "aName").Return(nil, database.NewEntityNotFoundError("Notfound")).Once()
-	mockdb.On("InsertArtifact", mock.AnythingOfType("*model.Artifact")).Return(database.WrapInternalDatabaseError(fmt.Errorf("Err"))).Once()
-	artifact, err = CreateArtifact(CreateArtifactReq{
-		Name:    "aName",
-		Chunked: true,
-	}, &model.Bucket{
-		State: model.OPEN,
-		Id:    "bName",
-	}, mockdb)
-	require.Error(t, err)
-	require.Nil(t, artifact)
+	{
+		// Fail on inserting into DB
+		mockdb.On("InsertArtifact", mock.AnythingOfType("*model.Artifact")).Return(database.WrapInternalDatabaseError(fmt.Errorf("Err"))).Once()
+		mockdb.On("GetArtifactByName", "bName", "aName").Return(nil, database.WrapInternalDatabaseError(fmt.Errorf("Err"))).Once()
+		artifact, err := CreateArtifact(createArtifactReq{
+			Name:    "aName",
+			Chunked: true,
+		}, &model.Bucket{
+			State: model.OPEN,
+			Id:    "bName",
+		}, mockdb)
+		require.Error(t, err)
+		require.Nil(t, artifact)
+		mockdb.AssertExpectations(t)
+	}
 
-	// Successfully create artifact
-	mockdb.On("GetArtifactByName", "bName", "aName").Return(nil, database.NewEntityNotFoundError("Notfound")).Once()
-	mockdb.On("InsertArtifact", mock.AnythingOfType("*model.Artifact")).Return(nil).Once()
-	artifact, err = CreateArtifact(CreateArtifactReq{
-		Name:         "aName",
-		Chunked:      true,
-		DeadlineMins: 20,
-	}, &model.Bucket{
-		State: model.OPEN,
-		Id:    "bName",
-	}, mockdb)
-	require.NoError(t, err)
-	require.NotNil(t, artifact)
-	require.Equal(t, "aName", artifact.Name)
-	require.Equal(t, "bName", artifact.BucketId)
-	require.Equal(t, model.APPENDING, artifact.State)
-	require.Equal(t, int64(0), artifact.Size)
+	{
+		// Successfully create artifact
+		mockdb.On("InsertArtifact", mock.AnythingOfType("*model.Artifact")).Return(nil).Once()
+		artifact, err := CreateArtifact(createArtifactReq{
+			Name:         "aName",
+			Chunked:      true,
+			DeadlineMins: 20,
+		}, &model.Bucket{
+			State: model.OPEN,
+			Id:    "bName",
+		}, mockdb)
+		require.NoError(t, err)
+		require.NotNil(t, artifact)
+		require.Equal(t, "aName", artifact.Name)
+		require.Equal(t, "bName", artifact.BucketId)
+		require.Equal(t, model.APPENDING, artifact.State)
+		require.Equal(t, int64(0), artifact.Size)
+		mockdb.AssertExpectations(t)
+	}
 	// ---------- END Streamed artifact creation --------------
 
-	mockdb.AssertExpectations(t)
+	// ---------- BEGIN Duplicate artifact name ---------------
+	{
+		mockdb.On("InsertArtifact", mock.AnythingOfType("*model.Artifact")).Return(database.MockDatabaseError()).Once()
+		mockdb.On("GetArtifactByName", "bName", "aName").Return(&model.Artifact{}, nil).Once()
+		mockdb.On("InsertArtifact", mock.AnythingOfType("*model.Artifact")).Return(nil).Once()
+		artifact, err := CreateArtifact(createArtifactReq{
+			Name:         "aName",
+			Chunked:      true,
+			DeadlineMins: 20,
+		}, &model.Bucket{
+			State: model.OPEN,
+			Id:    "bName",
+		}, mockdb)
+		require.NoError(t, err)
+		require.NotNil(t, artifact)
+		// "Random" string below is deterministically produced because we use a deterministic seed
+		// during unit tests. (https://golang.org/pkg/math/rand/#Seed)
+		require.Equal(t, "aName.dup.rfBd5", artifact.Name)
+		require.Equal(t, "bName", artifact.BucketId)
+		require.Equal(t, model.APPENDING, artifact.State)
+		require.Equal(t, int64(0), artifact.Size)
+		mockdb.AssertExpectations(t)
+	}
+
+	{
+		mockdb.On("InsertArtifact", mock.AnythingOfType("*model.Artifact")).Return(database.MockDatabaseError()).Times(6)
+		mockdb.On("GetArtifactByName", "bName", mock.Anything).Return(&model.Artifact{}, nil).Times(5)
+		artifact, err := CreateArtifact(createArtifactReq{
+			Name:         "aName",
+			Chunked:      true,
+			DeadlineMins: 20,
+		}, &model.Bucket{
+			State: model.OPEN,
+			Id:    "bName",
+		}, mockdb)
+		require.Nil(t, artifact)
+		require.Error(t, err)
+		mockdb.AssertExpectations(t)
+	}
+	// ---------- END Duplicate artifact name -----------------
 }
 
 func TestAppendLogChunk(t *testing.T) {

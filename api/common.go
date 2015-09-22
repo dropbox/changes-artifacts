@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 
 	"golang.org/x/net/context"
 
@@ -25,4 +26,14 @@ func LogAndRespondWithErrorf(ctx context.Context, render render.Render, code int
 func LogAndRespondWithError(ctx context.Context, render render.Render, code int, err error) {
 	sentry.ReportError(ctx, err)
 	render.JSON(code, map[string]string{"error": err.Error()})
+}
+
+const alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+func randString(n int) string {
+	strBytes := make([]byte, n)
+	for i := range strBytes {
+		strBytes[i] = alphabet[rand.Intn(len(alphabet))]
+	}
+	return string(strBytes)
 }

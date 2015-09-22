@@ -56,6 +56,7 @@ type Artifact struct {
 	Size         int64         `json:"size"`
 	State        ArtifactState `json:"state"`
 	DeadlineMins uint          `json:"deadlineMins"`
+	RelativePath string        `json:"relativePath"`
 }
 
 func (a *Artifact) DefaultS3URL() string {

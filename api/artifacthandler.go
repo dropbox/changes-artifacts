@@ -27,30 +27,41 @@ import (
 
 const DEFAULT_DEADLINE = 30
 
+// Format string to construct unique artifact names to recover from duplicate artifact name.
+const DuplicateArtifactNameFormat = "%s.dup.%s"
+
+// Maximum number of duplicate file name resolution attempts before failing with an internal error.
+const MaxDuplicateFileNameResolutionAttempts = 5
+
 var bytesUploadedCounter = stats.NewStat("bytes_uploaded")
 
-type CreateArtifactReq struct {
+type createArtifactReq struct {
 	Name         string
 	Chunked      bool
 	Size         int64
 	DeadlineMins uint
+	RelativePath string
 }
 
-func CreateArtifact(req CreateArtifactReq, bucket *model.Bucket, db database.Database) (*model.Artifact, error) {
+// CreateArtifact creates a new artifact in a open bucket.
+//
+// If an artifact with the same name already exists in the same bucket, we attempt to rename the
+// artifact by adding a suffix.
+// If the request specifies a chunked artifact, the size field is ignored and always set to zero.
+// If the request is for a streamed artifact, size is mandatory.
+// A relative path field may be specified to preserve the original file name and path. If no path is
+// specified, the original artifact name is used by default.
+func CreateArtifact(req createArtifactReq, bucket *model.Bucket, db database.Database) (*model.Artifact, *HttpError) {
 	if len(req.Name) == 0 {
-		return nil, fmt.Errorf("Artifact Name not provided, state = %s", bucket.State)
+		return nil, NewHttpError(http.StatusBadRequest, "Artifact name not provided")
 	}
 
 	if bucket.State != model.OPEN {
-		return nil, fmt.Errorf("Bucket is already closed")
+		return nil, NewHttpError(http.StatusBadRequest, "Bucket is already closed")
 	}
 
-	artifact, err := db.GetArtifactByName(bucket.Id, req.Name)
-	if err == nil {
-		return nil, fmt.Errorf("Artifact already exists")
-	}
+	artifact := new(model.Artifact)
 
-	artifact = new(model.Artifact)
 	artifact.Name = req.Name
 	artifact.BucketId = bucket.Id
 	artifact.DateCreated = time.Now()
@@ -65,14 +76,40 @@ func CreateArtifact(req CreateArtifactReq, bucket *model.Bucket, db database.Dat
 		artifact.State = model.APPENDING
 	} else {
 		if req.Size == 0 {
-			return nil, fmt.Errorf("Cannot create a new upload artifact without size.")
+			return nil, NewHttpError(http.StatusBadRequest, "Cannot create a new upload artifact without size.")
 		}
 		artifact.Size = req.Size
 		artifact.State = model.WAITING_FOR_UPLOAD
 	}
-	artifact.Name = req.Name
+
+	if req.RelativePath == "" {
+		// Use artifact name provided as default relativePath
+		artifact.RelativePath = req.Name
+	} else {
+		artifact.RelativePath = req.RelativePath
+	}
+
+	// Attempt to insert artifact and retry with a different name if it fails.
 	if err := db.InsertArtifact(artifact); err != nil {
-		return nil, fmt.Errorf("Error inserting artifact %s", err)
+		for attempt := 1; attempt <= MaxDuplicateFileNameResolutionAttempts; attempt++ {
+			// Unable to create new artifact - if an artifact already exists, the above insert failed
+			// because of a collision.
+			if _, err := db.GetArtifactByName(bucket.Id, artifact.Name); err != nil {
+				// This could be a transient DB error (down/unreachable), in which case we expect the client
+				// to retry. There is no value in attempting alternate artifact names.
+				//
+				// We have no means of verifying there was a name collision - bail with an internal error.
+				return nil, NewHttpError(http.StatusInternalServerError, err.Error())
+			}
+
+			// File name collision - attempt to resolve
+			artifact.Name = fmt.Sprintf(DuplicateArtifactNameFormat, req.Name, randString(5))
+			if err := db.InsertArtifact(artifact); err == nil {
+				return artifact, nil
+			}
+		}
+
+		return nil, NewHttpError(http.StatusInternalServerError, "Exceeded retry limit avoiding duplicates")
 	}
 
 	return artifact, nil
@@ -84,20 +121,18 @@ func HandleCreateArtifact(ctx context.Context, r render.Render, req *http.Reques
 		return
 	}
 
-	var createArtifactReq CreateArtifactReq
+	var createReq createArtifactReq
 
-	err := json.NewDecoder(req.Body).Decode(&createArtifactReq)
-	if err != nil {
+	if err := json.NewDecoder(req.Body).Decode(&createReq); err != nil {
 		LogAndRespondWithError(ctx, r, http.StatusBadRequest, err)
-	}
-	artifact, err := CreateArtifact(createArtifactReq, bucket, db)
-
-	if err != nil {
-		LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
 		return
 	}
 
-	r.JSON(http.StatusOK, artifact)
+	if artifact, err := CreateArtifact(createReq, bucket, db); err != nil {
+		LogAndRespondWithError(ctx, r, err.errCode, err)
+	} else {
+		r.JSON(http.StatusOK, artifact)
+	}
 }
 
 func ListArtifacts(ctx context.Context, r render.Render, req *http.Request, db database.Database, params martini.Params, bucket *model.Bucket) {
