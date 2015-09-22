@@ -8,3 +8,10 @@ guidelines on how to write the migration scripts.
 NOTE: Please run `go generate -v ./...` after making any changes to this folder. We are embedding the
 migration script as a go file (this translation is performed by `go generate`). Without running `go
 generate`, the migration file will *NOT* be included and applied.
+
+Testing database migrations (backwards compatiblity):
+-----------------------------------------------------
+During client integration tests, we execute the same migrations that we would on prod. By default,
+these tests will run against the previously deployed version (this *should* match the version on
+prod). To verify that tests continue to run after migrations, bump up the migration level stored in
+client_test.go#setupDB.

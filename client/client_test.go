@@ -15,6 +15,7 @@ import (
 	"github.com/dropbox/changes-artifacts/database"
 	"github.com/dropbox/changes-artifacts/model"
 	_ "github.com/lib/pq"
+	"github.com/rubenv/sql-migrate"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,9 +59,27 @@ func setupDB(t *testing.T) {
 	gdb := database.NewGorpDatabase(dbmap)
 	gdb.RegisterEntities()
 
-	if err := gdb.RecreateTables(); err != nil {
-		t.Fatalf("Error resetting Postgres DB: %s", err)
+	migrations := &migrate.AssetMigrationSource{
+		Asset:    database.Asset,
+		AssetDir: database.AssetDir,
+		Dir:      "migrations",
 	}
+
+	if n, err := migrate.Exec(db, "postgres", migrations, migrate.Down); err != nil {
+		t.Fatalf("Error resetting Postgres DB: %s", err)
+	} else {
+		fmt.Printf("Completed %d DOWN migrations\n", n)
+	}
+
+	// The number 3 below is the maximum number of migration levels to be performed. This is left here
+	// to make it easy to verify that database upgrades are backwards compatible.
+	// After a new migration is added, this number should be bumped up.
+	if n, err := migrate.ExecMax(db, "postgres", migrations, migrate.Up, 3); err != nil {
+		t.Fatalf("Error recreating Postgres DB: %s", err)
+	} else {
+		fmt.Printf("Completed %d UP migrations\n", n)
+	}
+
 	fmt.Println("************* DB RESET **************")
 }
 
