@@ -192,7 +192,7 @@ func AppendLogChunk(ctx context.Context, db database.Database, artifact *model.A
 		// contents, we ignore this test and claim that a range mismatch occured.
 		if nextByteOffset != 0 && nextByteOffset == logChunk.ByteOffset+logChunk.Size {
 			if prevLogChunk, err := db.GetLastLogChunkSeenForArtifact(artifact.Id); err == nil {
-				if prevLogChunk != nil && prevLogChunk.ByteOffset == logChunk.ByteOffset && prevLogChunk.Size == logChunk.Size && prevLogChunk.Content == logChunk.Content {
+				if prevLogChunk != nil && prevLogChunk.ByteOffset == logChunk.ByteOffset && prevLogChunk.Size == logChunk.Size && (prevLogChunk.Content == logChunk.Content || string(prevLogChunk.ContentBytes) == logChunk.Content) {
 					sentry.ReportMessage(ctx, fmt.Sprintf("Received duplicate chunk for artifact %s of size %d at byte %d", logChunk.ArtifactId, logChunk.Size, logChunk.ByteOffset))
 					return nil
 				}
@@ -210,6 +210,14 @@ func AppendLogChunk(ctx context.Context, db database.Database, artifact *model.A
 		if err := db.UpdateArtifact(artifact); err != nil {
 			return NewHttpError(http.StatusInternalServerError, err.Error())
 		}
+	}
+
+	// TODO(anupc): Set alwaysWriteContentBytes to true to start writing to ContentBytes always.
+	// This will deprecate Content which can be safely removed after that.
+	const alwaysWriteContentBytes = false
+	if alwaysWriteContentBytes {
+		logChunk.ContentBytes = []byte(logChunk.Content)
+		logChunk.Content = ""
 	}
 
 	if err := db.InsertLogChunk(logChunk); err != nil {
@@ -359,7 +367,11 @@ func MergeLogChunks(ctx context.Context, artifact *model.Artifact, db database.D
 		}()
 
 		for _, logChunk := range logChunks {
-			w.Write([]byte(logChunk.Content))
+			if len(logChunk.ContentBytes) > 0 {
+				w.Write(logChunk.ContentBytes)
+			} else {
+				w.Write([]byte(logChunk.Content))
+			}
 		}
 
 		w.Close()
@@ -459,11 +471,13 @@ func GetArtifactContent(ctx context.Context, r render.Render, req *http.Request,
 			LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
 			return
 		}
-		var buf bytes.Buffer
 		for _, logChunk := range logChunks {
-			buf.WriteString(logChunk.Content)
+			if len(logChunk.ContentBytes) > 0 {
+				res.Write(logChunk.ContentBytes)
+			} else {
+				res.Write([]byte(logChunk.Content))
+			}
 		}
-		res.Write(buf.Bytes())
 		return
 	case model.WAITING_FOR_UPLOAD:
 		// Not started yet. Error

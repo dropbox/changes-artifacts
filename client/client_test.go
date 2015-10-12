@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -71,10 +72,11 @@ func setupDB(t *testing.T) {
 		fmt.Printf("Completed %d DOWN migrations\n", n)
 	}
 
-	// The number 3 below is the maximum number of migration levels to be performed. This is left here
-	// to make it easy to verify that database upgrades are backwards compatible.
+	// `maxMigrations` below is the maximum number of migration levels to be performed.
+	// This is left here to make it easy to verify that database upgrades are backwards compatible.
 	// After a new migration is added, this number should be bumped up.
-	if n, err := migrate.ExecMax(db, "postgres", migrations, migrate.Up, 3); err != nil {
+	const maxMigrations = 4
+	if n, err := migrate.ExecMax(db, "postgres", migrations, migrate.Up, maxMigrations); err != nil {
 		t.Fatalf("Error recreating Postgres DB: %s", err)
 	} else {
 		fmt.Printf("Completed %d UP migrations\n", n)
@@ -338,6 +340,33 @@ func TestAppendToChunkedArtifact(t *testing.T) {
 	var buf bytes.Buffer
 	buf.ReadFrom(content)
 	require.Equal(t, 30, buf.Len())
+}
+
+func TestChunkedArtifactBytes(t *testing.T) {
+	const bucketName = "bucketName"
+	const ownerName = "ownerName"
+	const artifactName = "artifactName"
+
+	if testing.Short() {
+		t.Skip("Skipping end-to-end test in short mode.")
+	}
+
+	t.Skip("This test will fail until we switch to using a byte array in postgres.")
+
+	client := setup(t)
+
+	bucket, err := client.NewBucket(bucketName, ownerName, 31)
+	require.NotNil(t, bucket)
+	require.NoError(t, err)
+
+	// Append bytes to artifacts.
+	for i := 0; i <= 255; i++ {
+		cartifact, err := bucket.NewChunkedArtifact(artifactName + strconv.Itoa(i))
+		require.NotNil(t, cartifact)
+		require.NoError(t, err)
+		require.NoError(t, cartifact.AppendLog(string(byte(i))))
+		require.NoError(t, cartifact.Flush())
+	}
 }
 
 func TestPostStreamedArtifact(t *testing.T) {
