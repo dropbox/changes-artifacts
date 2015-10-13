@@ -212,13 +212,8 @@ func AppendLogChunk(ctx context.Context, db database.Database, artifact *model.A
 		}
 	}
 
-	// TODO(anupc): Set alwaysWriteContentBytes to true to start writing to ContentBytes always.
-	// This will deprecate Content which can be safely removed after that.
-	const alwaysWriteContentBytes = false
-	if alwaysWriteContentBytes {
-		logChunk.ContentBytes = []byte(logChunk.Content)
-		logChunk.Content = ""
-	}
+	logChunk.ContentBytes = []byte(logChunk.Content)
+	logChunk.Content = ""
 
 	if err := db.InsertLogChunk(logChunk); err != nil {
 		return NewHttpError(http.StatusBadRequest, "Error updating log chunk: %s", err)

@@ -198,6 +198,21 @@ func TestCreateArtifact(t *testing.T) {
 	// ---------- END Duplicate artifact name -----------------
 }
 
+func getExpectedLogChunkToBeWritten() *model.LogChunk {
+	return &model.LogChunk{
+		Size:         2,
+		ArtifactId:   10,
+		ContentBytes: []byte("ab"),
+	}
+}
+
+func getLogChunkToAppend() *model.LogChunk {
+	return &model.LogChunk{
+		Size:    2,
+		Content: "ab",
+	}
+}
+
 func TestAppendLogChunk(t *testing.T) {
 	mockdb := &database.MockDatabase{}
 
@@ -229,17 +244,12 @@ func TestAppendLogChunk(t *testing.T) {
 		Content: "ab",
 	}))
 
-	logChunk := &model.LogChunk{
-		Size:    2,
-		Content: "ab",
-	}
-
 	// DB Error while trying to find where the next byte is expected
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(0), database.MockDatabaseError()).Once()
 	require.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
-	}, logChunk))
+	}, getLogChunkToAppend()))
 
 	// Last logchunk was repeated.
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(2), nil).Once()
@@ -247,7 +257,7 @@ func TestAppendLogChunk(t *testing.T) {
 	require.NoError(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
-	}, logChunk))
+	}, getLogChunkToAppend()))
 
 	// Unexpected logchunk
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(2), nil).Once()
@@ -255,30 +265,30 @@ func TestAppendLogChunk(t *testing.T) {
 	require.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
-	}, logChunk))
+	}, getLogChunkToAppend()))
 
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(0), nil).Once()
 	mockdb.On("UpdateArtifact", mock.AnythingOfType("*model.Artifact")).Return(database.MockDatabaseError()).Once()
 	require.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
-	}, logChunk))
+	}, getLogChunkToAppend()))
 
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(0), nil).Once()
 	mockdb.On("UpdateArtifact", mock.AnythingOfType("*model.Artifact")).Return(nil).Once()
-	mockdb.On("InsertLogChunk", logChunk).Return(database.MockDatabaseError()).Once()
+	mockdb.On("InsertLogChunk", getExpectedLogChunkToBeWritten()).Return(database.MockDatabaseError()).Once()
 	require.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
-	}, logChunk))
+	}, getLogChunkToAppend()))
 
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(0), nil).Once()
 	mockdb.On("UpdateArtifact", mock.AnythingOfType("*model.Artifact")).Return(nil).Once()
-	mockdb.On("InsertLogChunk", logChunk).Return(nil).Once()
+	mockdb.On("InsertLogChunk", getExpectedLogChunkToBeWritten()).Return(nil).Once()
 	require.NoError(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
-	}, logChunk))
+	}, getLogChunkToAppend()))
 
 	mockdb.AssertExpectations(t)
 }

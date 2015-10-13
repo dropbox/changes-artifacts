@@ -351,8 +351,6 @@ func TestChunkedArtifactBytes(t *testing.T) {
 		t.Skip("Skipping end-to-end test in short mode.")
 	}
 
-	t.Skip("This test will fail until we switch to using a byte array in postgres.")
-
 	client := setup(t)
 
 	bucket, err := client.NewBucket(bucketName, ownerName, 31)
