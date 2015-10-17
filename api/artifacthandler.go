@@ -183,7 +183,7 @@ func AppendLogChunk(ctx context.Context, db database.Database, artifact *model.A
 	}
 
 	if int64(len(logChunkReq.Content)) != logChunkReq.Size {
-		return NewHttpError(http.StatusBadRequest, "Content length does not match indicated size")
+		return NewHttpError(http.StatusBadRequest, "Content length %d does not match indicated size %d", len(logChunkReq.Content), logChunkReq.Size)
 	}
 
 	// Find previous chunk in DB - append only
