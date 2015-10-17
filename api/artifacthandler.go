@@ -43,6 +43,12 @@ type createArtifactReq struct {
 	RelativePath string
 }
 
+type createLogChunkReq struct {
+	ByteOffset int64
+	Size       int64
+	Content    string
+}
+
 // CreateArtifact creates a new artifact in a open bucket.
 //
 // If an artifact with the same name already exists in the same bucket, we attempt to rename the
@@ -163,57 +169,59 @@ func HandleGetArtifact(ctx context.Context, r render.Render, artifact *model.Art
 // If the logchunk position does not match the current end of artifact, an error is returned.
 // An exception to this is made when the last seen logchunk is repeated, which is silently ignored
 // without an error.
-func AppendLogChunk(ctx context.Context, db database.Database, artifact *model.Artifact, logChunk *model.LogChunk) *HttpError {
+func AppendLogChunk(ctx context.Context, db database.Database, artifact *model.Artifact, logChunkReq *createLogChunkReq) *HttpError {
 	if artifact.State != model.APPENDING {
 		return NewHttpError(http.StatusBadRequest, fmt.Sprintf("Unexpected artifact state: %s", artifact.State))
 	}
 
-	if logChunk.Size <= 0 {
-		return NewHttpError(http.StatusBadRequest, "Invalid chunk size %d", logChunk.Size)
+	if logChunkReq.Size <= 0 {
+		return NewHttpError(http.StatusBadRequest, "Invalid chunk size %d", logChunkReq.Size)
 	}
 
-	if logChunk.Content == "" {
+	if len(logChunkReq.Content) == 0 {
 		return NewHttpError(http.StatusBadRequest, "Empty content string")
 	}
 
-	if int64(len(logChunk.Content)) != logChunk.Size {
+	if int64(len(logChunkReq.Content)) != logChunkReq.Size {
 		return NewHttpError(http.StatusBadRequest, "Content length does not match indicated size")
 	}
 
 	// Find previous chunk in DB - append only
 	if nextByteOffset, err := db.GetLastByteSeenForArtifact(artifact.Id); err != nil {
 		return NewHttpError(http.StatusInternalServerError, "Error while checking for previous byte range: %s", err)
-	} else if nextByteOffset != logChunk.ByteOffset {
+	} else if nextByteOffset != logChunkReq.ByteOffset {
 		// There is a possibility the previous logchunk is being retried - we need to handle cases where
 		// a server/proxy time out caused the client not to get an ACK when it successfully uploaded the
 		// previous logchunk, due to which it is retrying.
 		//
 		// This is a best-effort check - if we encounter DB errors or any mismatch in the chunk
 		// contents, we ignore this test and claim that a range mismatch occured.
-		if nextByteOffset != 0 && nextByteOffset == logChunk.ByteOffset+logChunk.Size {
+		if nextByteOffset != 0 && nextByteOffset == logChunkReq.ByteOffset+logChunkReq.Size {
 			if prevLogChunk, err := db.GetLastLogChunkSeenForArtifact(artifact.Id); err == nil {
-				if prevLogChunk != nil && prevLogChunk.ByteOffset == logChunk.ByteOffset && prevLogChunk.Size == logChunk.Size && (prevLogChunk.Content == logChunk.Content || string(prevLogChunk.ContentBytes) == logChunk.Content) {
-					sentry.ReportMessage(ctx, fmt.Sprintf("Received duplicate chunk for artifact %s of size %d at byte %d", logChunk.ArtifactId, logChunk.Size, logChunk.ByteOffset))
+				if prevLogChunk != nil && prevLogChunk.ByteOffset == logChunkReq.ByteOffset && prevLogChunk.Size == logChunkReq.Size && string(prevLogChunk.ContentBytes) == logChunkReq.Content {
+					sentry.ReportMessage(ctx, fmt.Sprintf("Received duplicate chunk for artifact %s of size %d at byte %d", artifact.Id, logChunkReq.Size, logChunkReq.ByteOffset))
 					return nil
 				}
 			}
 		}
 
-		return NewHttpError(http.StatusBadRequest, "Overlapping ranges detected, expected offset: %d, actual offset: %d", nextByteOffset, logChunk.ByteOffset)
+		return NewHttpError(http.StatusBadRequest, "Overlapping ranges detected, expected offset: %d, actual offset: %d", nextByteOffset, logChunkReq.ByteOffset)
 	}
 
-	logChunk.ArtifactId = artifact.Id
-
 	// Expand artifact size - redundant after above change.
-	if artifact.Size < logChunk.ByteOffset+logChunk.Size {
-		artifact.Size = logChunk.ByteOffset + logChunk.Size
+	if artifact.Size < logChunkReq.ByteOffset+logChunkReq.Size {
+		artifact.Size = logChunkReq.ByteOffset + logChunkReq.Size
 		if err := db.UpdateArtifact(artifact); err != nil {
 			return NewHttpError(http.StatusInternalServerError, err.Error())
 		}
 	}
 
-	logChunk.ContentBytes = []byte(logChunk.Content)
-	logChunk.Content = ""
+	logChunk := &model.LogChunk{
+		ArtifactId:   artifact.Id,
+		ByteOffset:   logChunkReq.ByteOffset,
+		ContentBytes: []byte(logChunkReq.Content),
+		Size:         logChunkReq.Size,
+	}
 
 	if err := db.InsertLogChunk(logChunk); err != nil {
 		return NewHttpError(http.StatusBadRequest, "Error updating log chunk: %s", err)
@@ -260,13 +268,13 @@ func PostArtifact(ctx context.Context, r render.Render, req *http.Request, db da
 
 	case model.APPENDING:
 		// TODO: Treat contents as a JSON request containing a chunk.
-		logChunk := new(model.LogChunk)
-		if err := json.NewDecoder(req.Body).Decode(logChunk); err != nil {
+		logChunkReq := new(createLogChunkReq)
+		if err := json.NewDecoder(req.Body).Decode(logChunkReq); err != nil {
 			LogAndRespondWithError(ctx, r, http.StatusBadRequest, err)
 			return
 		}
 
-		if err := AppendLogChunk(ctx, db, artifact, logChunk); err != nil {
+		if err := AppendLogChunk(ctx, db, artifact, logChunkReq); err != nil {
 			LogAndRespondWithError(ctx, r, err.errCode, err)
 			return
 		}
@@ -362,11 +370,7 @@ func MergeLogChunks(ctx context.Context, artifact *model.Artifact, db database.D
 		}()
 
 		for _, logChunk := range logChunks {
-			if len(logChunk.ContentBytes) > 0 {
-				w.Write(logChunk.ContentBytes)
-			} else {
-				w.Write([]byte(logChunk.Content))
-			}
+			w.Write(logChunk.ContentBytes)
 		}
 
 		w.Close()
@@ -467,11 +471,7 @@ func GetArtifactContent(ctx context.Context, r render.Render, req *http.Request,
 			return
 		}
 		for _, logChunk := range logChunks {
-			if len(logChunk.ContentBytes) > 0 {
-				res.Write(logChunk.ContentBytes)
-			} else {
-				res.Write([]byte(logChunk.Content))
-			}
+			res.Write(logChunk.ContentBytes)
 		}
 		return
 	case model.WAITING_FOR_UPLOAD:

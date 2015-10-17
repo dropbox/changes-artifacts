@@ -206,8 +206,8 @@ func getExpectedLogChunkToBeWritten() *model.LogChunk {
 	}
 }
 
-func getLogChunkToAppend() *model.LogChunk {
-	return &model.LogChunk{
+func getLogChunkToAppend() *createLogChunkReq {
+	return &createLogChunkReq{
 		Size:    2,
 		Content: "ab",
 	}
@@ -224,14 +224,14 @@ func TestAppendLogChunk(t *testing.T) {
 	// Size 0 chunk
 	require.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
-	}, &model.LogChunk{
+	}, &createLogChunkReq{
 		Size: 0,
 	}))
 
 	// Blank string chunk
 	require.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
-	}, &model.LogChunk{
+	}, &createLogChunkReq{
 		Size:    1,
 		Content: "",
 	}))
@@ -239,7 +239,7 @@ func TestAppendLogChunk(t *testing.T) {
 	// Mismatch between size and content chunk
 	require.Error(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
-	}, &model.LogChunk{
+	}, &createLogChunkReq{
 		Size:    1,
 		Content: "ab",
 	}))
@@ -253,7 +253,7 @@ func TestAppendLogChunk(t *testing.T) {
 
 	// Last logchunk was repeated.
 	mockdb.On("GetLastByteSeenForArtifact", int64(10)).Return(int64(2), nil).Once()
-	mockdb.On("GetLastLogChunkSeenForArtifact", int64(10)).Return(&model.LogChunk{Size: 2, Content: "ab"}, nil).Once()
+	mockdb.On("GetLastLogChunkSeenForArtifact", int64(10)).Return(&model.LogChunk{Size: 2, ContentBytes: []byte("ab")}, nil).Once()
 	require.NoError(t, AppendLogChunk(context.Background(), mockdb, &model.Artifact{
 		State: model.APPENDING,
 		Id:    10,
@@ -438,8 +438,8 @@ func TestMergeLogChunks(t *testing.T) {
 		BucketId: "TestMergeLogChunks__bucketName",
 	}).Return(nil).Once()
 	mockdb.On("ListLogChunksInArtifact", int64(2)).Return([]model.LogChunk{
-		model.LogChunk{Content: "01234"},
-		model.LogChunk{Content: "56789"},
+		model.LogChunk{ContentBytes: []byte("01234")},
+		model.LogChunk{ContentBytes: []byte("56789")},
 	}, nil).Once()
 	mockdb.On("UpdateArtifact", &model.Artifact{
 		Id:       2,
@@ -470,8 +470,8 @@ func TestMergeLogChunks(t *testing.T) {
 		BucketId: "TestMergeLogChunks__bucketName",
 	}).Return(nil).Once()
 	mockdb.On("ListLogChunksInArtifact", int64(3)).Return([]model.LogChunk{
-		model.LogChunk{Content: "01234"},
-		model.LogChunk{Content: "56789"},
+		model.LogChunk{ContentBytes: []byte("01234")},
+		model.LogChunk{ContentBytes: []byte("56789")},
 	}, nil).Once()
 	mockdb.On("DeleteLogChunksForArtifact", int64(3)).Return(int64(2), nil).Once()
 	mockdb.On("UpdateArtifact", &model.Artifact{

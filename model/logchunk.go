@@ -6,6 +6,5 @@ type LogChunk struct {
 	ArtifactId   int64
 	ByteOffset   int64
 	Size         int64
-	Content      string // DEPRECATED in favor of ContentBytes
 	ContentBytes []byte `db:"content_bytes"`
 }
