@@ -33,6 +33,9 @@ const DuplicateArtifactNameFormat = "%s.dup.%s"
 // Maximum number of duplicate file name resolution attempts before failing with an internal error.
 const MaxDuplicateFileNameResolutionAttempts = 5
 
+// Maximum artifact size => 200 MB
+const MaxArtifactSizeBytes = 200 * 1024 * 1024
+
 var bytesUploadedCounter = stats.NewStat("bytes_uploaded")
 
 type createArtifactReq struct {
@@ -83,6 +86,8 @@ func CreateArtifact(req createArtifactReq, bucket *model.Bucket, db database.Dat
 	} else {
 		if req.Size == 0 {
 			return nil, NewHttpError(http.StatusBadRequest, "Cannot create a new upload artifact without size.")
+		} else if req.Size > MaxArtifactSizeBytes {
+			return nil, NewHttpError(http.StatusRequestEntityTooLarge, fmt.Sprintf("Entity size %d too large (limit %d)", req.Size, MaxArtifactSizeBytes))
 		}
 		artifact.Size = req.Size
 		artifact.State = model.WAITING_FOR_UPLOAD

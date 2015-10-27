@@ -80,6 +80,19 @@ func TestCreateArtifact(t *testing.T) {
 	}
 
 	{
+		artifact, err := CreateArtifact(createArtifactReq{
+			Name:    "aName",
+			Size:    MaxArtifactSizeBytes + 1, // Invalid size
+			Chunked: false,
+		}, &model.Bucket{
+			State: model.OPEN,
+			Id:    "bName",
+		}, mockdb)
+		require.Nil(t, artifact)
+		require.Error(t, err)
+	}
+
+	{
 		// Fail inserting into DB once and also fail getting artifact
 		mockdb.On("InsertArtifact", mock.AnythingOfType("*model.Artifact")).Return(database.WrapInternalDatabaseError(fmt.Errorf("Err"))).Once()
 		mockdb.On("GetArtifactByName", "bName", "aName").Return(nil, database.WrapInternalDatabaseError(fmt.Errorf("Err"))).Once()
