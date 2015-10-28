@@ -28,6 +28,19 @@ func LogAndRespondWithError(ctx context.Context, render render.Render, code int,
 	render.JSON(code, map[string]string{"error": err.Error()})
 }
 
+// RespondWithErrorf posts a JSON-serialized error message and statuscode on the HTTP response
+// object (using Martini render).
+func RespondWithErrorf(ctx context.Context, render render.Render, code int, errStr string, params ...interface{}) {
+	msg := fmt.Sprintf(errStr, params)
+	render.JSON(code, map[string]string{"error": msg})
+}
+
+// RespondWithError posts a JSON-serialized error and statuscode on the HTTP response object
+// (using Martini render).
+func RespondWithError(ctx context.Context, render render.Render, code int, err error) {
+	render.JSON(code, map[string]string{"error": err.Error()})
+}
+
 const alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 func randString(n int) string {

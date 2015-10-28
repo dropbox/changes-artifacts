@@ -51,25 +51,31 @@ func VersionHandler(res http.ResponseWriter, req *http.Request) {
 
 func bindBucket(ctx context.Context, w http.ResponseWriter, r render.Render, c martini.Context, params martini.Params, db database.Database) {
 	bucket, err := db.GetBucket(params["bucket_id"])
-	if bucket == nil {
-		api.LogAndRespondWithError(ctx, r, http.StatusBadRequest, err)
-		return
-	}
-	c.Map(bucket)
 
 	if err != nil && err.EntityNotFound() {
-		api.LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Bucket not found")
+		// Don't log this error to Sentry
+		// Changes will hit this endpoint for non-existant buckets very often.
+		api.RespondWithErrorf(ctx, r, http.StatusNotFound, "Bucket not found")
 		return
 	}
 
 	if err != nil {
 		api.LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
+		return
 	}
+
+	if bucket == nil {
+		api.LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Got nil bucket without error for bucket: %s", params["bucket_id"])
+		return
+	}
+
+	c.Map(bucket)
 }
 
 func bindArtifact(ctx context.Context, w http.ResponseWriter, r render.Render, c martini.Context, params martini.Params, bucket *model.Bucket, db database.Database) {
 	if bucket == nil {
-		// XXX I don't know why we do this.
+		// Unfortunately, martini doesn't have a simple mechanism to stop method handling once an error
+		// has been found. So, we have to perform error checking all the way down
 		var artifact *model.Artifact
 		artifact = nil
 		c.Map(artifact)
