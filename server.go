@@ -177,6 +177,10 @@ func main() {
 
 	onlyPerformMigrations := flag.Bool("migrations-only", false, "Only perform database migrations and quit")
 
+	dbMaxIdleConns := flag.Int("db-max-idle-conns", 50, "Maximum number of idle connections to the DB")
+
+	dbMaxOpenConns := flag.Int("db-max-open-conns", 200, "Maximum number of open connections to the DB")
+
 	shutdownTimeout := flag.Duration("shutdown-timeout", 15*time.Second, "Time to wait before closing active connections after SIGTERM signal has been recieved")
 
 	flag.Parse()
@@ -209,6 +213,8 @@ func main() {
 		return
 	}
 
+	db.SetMaxIdleConns(*dbMaxIdleConns)
+	db.SetMaxOpenConns(*dbMaxOpenConns)
 	defer db.Close()
 	dbmap := &gorp.DbMap{Db: db, Dialect: gorp.PostgresDialect{}}
 	if *flagLogDBQueries {
