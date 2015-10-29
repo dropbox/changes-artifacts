@@ -204,7 +204,7 @@ func AppendLogChunk(ctx context.Context, db database.Database, artifact *model.A
 		if nextByteOffset != 0 && nextByteOffset == logChunkReq.ByteOffset+logChunkReq.Size {
 			if prevLogChunk, err := db.GetLastLogChunkSeenForArtifact(artifact.Id); err == nil {
 				if prevLogChunk != nil && prevLogChunk.ByteOffset == logChunkReq.ByteOffset && prevLogChunk.Size == logChunkReq.Size && string(prevLogChunk.ContentBytes) == logChunkReq.Content {
-					sentry.ReportMessage(ctx, fmt.Sprintf("Received duplicate chunk for artifact %s of size %d at byte %d", artifact.Id, logChunkReq.Size, logChunkReq.ByteOffset))
+					sentry.ReportMessage(ctx, fmt.Sprintf("Received duplicate chunk for artifact %v of size %d at byte %d", artifact.Id, logChunkReq.Size, logChunkReq.ByteOffset))
 					return nil
 				}
 			}

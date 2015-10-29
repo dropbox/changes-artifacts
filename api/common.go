@@ -15,7 +15,7 @@ import (
 // object (using Martini render).
 // Log the error message to Sentry.
 func LogAndRespondWithErrorf(ctx context.Context, render render.Render, code int, errStr string, params ...interface{}) {
-	msg := fmt.Sprintf(errStr, params)
+	msg := fmt.Sprintf(errStr, params...)
 	sentry.ReportError(ctx, errors.New(msg))
 	render.JSON(code, map[string]string{"error": msg})
 }
@@ -31,7 +31,7 @@ func LogAndRespondWithError(ctx context.Context, render render.Render, code int,
 // RespondWithErrorf posts a JSON-serialized error message and statuscode on the HTTP response
 // object (using Martini render).
 func RespondWithErrorf(ctx context.Context, render render.Render, code int, errStr string, params ...interface{}) {
-	msg := fmt.Sprintf(errStr, params)
+	msg := fmt.Sprintf(errStr, params...)
 	render.JSON(code, map[string]string{"error": msg})
 }
 
