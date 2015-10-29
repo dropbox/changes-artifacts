@@ -82,9 +82,9 @@ func reportError(ctx context.Context, sentryClient *raven.Client, err error) {
 		} else {
 			sentryClient.CaptureError(err, map[string]string{})
 		}
-	} else {
-		log.Printf("[Sentry Error] %s\n", err)
 	}
+
+	log.Printf("[Sentry Error] %v\n", err)
 }
 
 func reportMessage(ctx context.Context, sentryClient *raven.Client, msg string) {
@@ -96,9 +96,9 @@ func reportMessage(ctx context.Context, sentryClient *raven.Client, msg string) 
 		} else {
 			sentryClient.CaptureMessage(msg, map[string]string{})
 		}
-	} else {
-		log.Printf("[Sentry Message] %s\n", msg)
 	}
+
+	log.Printf("[Sentry Message] %v\n", msg)
 }
 
 // PanicHandler intercepts panic's from request handlers and sends them to Sentry.
