@@ -87,7 +87,7 @@ func CreateArtifact(req createArtifactReq, bucket *model.Bucket, db database.Dat
 		if req.Size == 0 {
 			return nil, NewHttpError(http.StatusBadRequest, "Cannot create a new upload artifact without size.")
 		} else if req.Size > MaxArtifactSizeBytes {
-			return nil, NewHttpError(http.StatusRequestEntityTooLarge, fmt.Sprintf("Entity size %d too large (limit %d)", req.Size, MaxArtifactSizeBytes))
+			return nil, NewHttpError(http.StatusRequestEntityTooLarge, fmt.Sprintf("Entity '%s' (size %d) is too large (limit %d)", req.Name, req.Size, MaxArtifactSizeBytes))
 		}
 		artifact.Size = req.Size
 		artifact.State = model.WAITING_FOR_UPLOAD
