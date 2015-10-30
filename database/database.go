@@ -80,14 +80,6 @@ type Database interface {
 	// Register all DB table<->object mappings in memory
 	RegisterEntities()
 
-	// Create all tables if they don't exist yet.
-	// NOTE: Should only be used from tests.
-	CreateEntities() *DatabaseError
-
-	// Recreate all tables.
-	// NOTE: Should only be used from tests.
-	RecreateTables() *DatabaseError
-
 	// Bucket instance is expected to have id, datecreated, state and owner field set.
 	InsertBucket(*model.Bucket) *DatabaseError
 

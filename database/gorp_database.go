@@ -42,18 +42,6 @@ func (db *GorpDatabase) RegisterEntities() {
 	db.dbmap.AddTableWithName(model.LogChunk{}, "logchunk").SetKeys(true, "Id")
 }
 
-func (db *GorpDatabase) CreateEntities() *DatabaseError {
-	return WrapInternalDatabaseError(db.dbmap.CreateTablesIfNotExists())
-}
-
-func (db *GorpDatabase) RecreateTables() *DatabaseError {
-	if err := db.dbmap.DropTables(); err != nil {
-		return WrapInternalDatabaseError(err)
-	}
-
-	return db.CreateEntities()
-}
-
 func (db *GorpDatabase) InsertBucket(bucket *model.Bucket) *DatabaseError {
 	if err := verifyBucketFields(bucket); err != nil {
 		return err
@@ -81,7 +69,11 @@ func (db *GorpDatabase) UpdateBucket(bucket *model.Bucket) *DatabaseError {
 
 func (db *GorpDatabase) ListBuckets() ([]model.Bucket, *DatabaseError) {
 	buckets := []model.Bucket{}
-	if _, err := db.dbmap.Select(&buckets, "SELECT * FROM bucket"); err != nil {
+	// NOTE: Hardcoded limit of 25 buckets below.
+	// Because of the large number of buckets (2.5M+ and increasing), its not feasible to list all
+	// buckets at /buckets. Instead, we show only the latest 25 buckets. This endpoint is not
+	// particularly useful and is not used by any client.
+	if _, err := db.dbmap.Select(&buckets, "SELECT * FROM bucket ORDER BY datecreated LIMIT 25"); err != nil {
 		return nil, WrapInternalDatabaseError(err)
 	}
 

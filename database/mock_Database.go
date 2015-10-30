@@ -12,34 +12,6 @@ type MockDatabase struct {
 func (_m *MockDatabase) RegisterEntities() {
 	_m.Called()
 }
-func (_m *MockDatabase) CreateEntities() *DatabaseError {
-	ret := _m.Called()
-
-	var r0 *DatabaseError
-	if rf, ok := ret.Get(0).(func() *DatabaseError); ok {
-		r0 = rf()
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*DatabaseError)
-		}
-	}
-
-	return r0
-}
-func (_m *MockDatabase) RecreateTables() *DatabaseError {
-	ret := _m.Called()
-
-	var r0 *DatabaseError
-	if rf, ok := ret.Get(0).(func() *DatabaseError); ok {
-		r0 = rf()
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*DatabaseError)
-		}
-	}
-
-	return r0
-}
 func (_m *MockDatabase) InsertBucket(_a0 *model.Bucket) *DatabaseError {
 	ret := _m.Called(_a0)
 
