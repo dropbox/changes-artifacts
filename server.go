@@ -15,10 +15,8 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
-	"os/signal"
-	"runtime/pprof"
-	"syscall"
 	"time"
 
 	"golang.org/x/net/context"
@@ -167,9 +165,6 @@ func main() {
 	var flagConfigFile string
 	flag.StringVar(&flagConfigFile, "config", "", "JSON Config file containing DB parameters and S3 information")
 
-	var flagCPUProfile string
-	flag.StringVar(&flagCPUProfile, "cpuprofile", "", "File to write CPU profile into")
-
 	flagVerbose := flag.Bool("verbose", false, "Enable request logging")
 	flagLogDBQueries := flag.Bool("log-db-queries", false, "Enable DB query logging (Use with care, will dump raw logchunk contents to logfile)")
 
@@ -222,27 +217,6 @@ func main() {
 	}
 	gdb := database.NewGorpDatabase(dbmap)
 	// ----- END DB Connections Setup -----
-
-	// ----- BEGIN CPU profiling -----
-	if flagCPUProfile != "" {
-		sig := make(chan os.Signal, 1)
-
-		f, err := os.Create(flagCPUProfile)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		go func() {
-			<-sig
-			fmt.Println("Handling SIGHUP")
-			pprof.StopCPUProfile()
-			os.Exit(0)
-		}()
-
-		pprof.StartCPUProfile(f)
-		signal.Notify(sig, syscall.SIGHUP)
-	}
-	// ----- END CPU Profiling -----
 
 	// ----- BEGIN AWS Connections -----
 	var region aws.Region
@@ -298,7 +272,6 @@ func main() {
 	r := martini.NewRouter()
 	// '/' url is used to determine if the server is up. Do not remove.
 	r.Get("/", HomeHandler)
-	r.Get("/stats", stats.Handler)
 	r.Get("/version", VersionHandler)
 	r.Get("/buckets", api.ListBuckets)
 	r.Post("/buckets", api.HandleCreateBucket)
@@ -315,9 +288,10 @@ func main() {
 		}, bindArtifact)
 	}, bindBucket)
 	m.Action(r.Handle)
+	http.Handle("/", m)
 
 	// If the process gets a SIGTERM, it will close listening port allowing another server to bind and
 	// begin listening immediately. Any ongoing connections will be given 15 seconds (by default) to
 	// complete, after which they are forcibly terminated.
-	graceful.Run(getListenAddr(), *shutdownTimeout, m)
+	graceful.Run(getListenAddr(), *shutdownTimeout, nil)
 }
