@@ -3,21 +3,24 @@
 export DEBIAN_FRONTEND=noninteractive
 
 install_go() {
-  GO_VERSION=1.4.2
+  GO_VERSION=1.5.1
+  re=\\bgo$GO_VERSION\\b
 
-  if [ ! -x /usr/local/go/bin/go ]
+  if [ -x /usr/local/go/bin/go ] && [[ `/usr/local/go/bin/go version` =~ $re ]]
   then
-    echo "Installing Go binary...."
-    cd /tmp
-    wget "http://golang.org/dl/go${GO_VERSION}.linux-amd64.tar.gz"
-    sudo tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
-    echo "Installed Go binary...."
-
-    echo 'export PATH=/usr/local/go/bin:$PATH' | sudo tee /etc/profile.d/golang.sh
-    echo 'export GOPATH=~/' | sudo tee /etc/profile.d/gopath.sh
-  else
     echo "Go binary already installed"
+    return
   fi
+
+  sudo rm -rf /usr/local/go
+  echo "Installing Go binary...."
+  cd /tmp
+  wget -O go${GO_VERSION}.linux-amd64.tar.gz -q http://golang.org/dl/go${GO_VERSION}.linux-amd64.tar.gz
+  sudo tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
+  echo "Installed Go binary...."
+
+  echo 'export PATH=/usr/local/go/bin:$PATH' | sudo tee /etc/profile.d/golang.sh
+  echo 'export GOPATH=~/' | sudo tee /etc/profile.d/gopath.sh
 
   /usr/local/go/bin/go version
 
