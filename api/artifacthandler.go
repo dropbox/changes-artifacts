@@ -192,9 +192,8 @@ func AppendLogChunk(ctx context.Context, db database.Database, artifact *model.A
 	}
 
 	// Find previous chunk in DB - append only
-	if nextByteOffset, err := db.GetLastByteSeenForArtifact(artifact.Id); err != nil {
-		return NewHttpError(http.StatusInternalServerError, "Error while checking for previous byte range: %s", err)
-	} else if nextByteOffset != logChunkReq.ByteOffset {
+	nextByteOffset := artifact.Size
+	if nextByteOffset != logChunkReq.ByteOffset {
 		// There is a possibility the previous logchunk is being retried - we need to handle cases where
 		// a server/proxy time out caused the client not to get an ACK when it successfully uploaded the
 		// previous logchunk, due to which it is retrying.
