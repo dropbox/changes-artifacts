@@ -36,6 +36,31 @@ func (v *Stat) String() string {
 	return v.exp.String()
 }
 
+// TimingStat holds a timer statistic, internally represented as two counters, total time consumed
+// and number of observations.
+type TimingStat struct {
+	timeNs, counter *Stat
+}
+
+// NewTimingStat creates a timing statistic with the given name
+func NewTimingStat(key string) *TimingStat {
+	timeNs := NewStat(key + "_time_ns")
+	counter := NewStat(key + "_count")
+	return &TimingStat{timeNs: timeNs, counter: counter}
+}
+
+// AddTimeSince calculates time elapsed since given start time and adds it to the stat.
+func (ts *TimingStat) AddTimeSince(start time.Time) {
+	ts.Add(time.Since(start))
+}
+
+// Add notes a timing event of given duration (increases observation count by one and adds time
+// duration to total time spent in event)
+func (ts *TimingStat) Add(delta time.Duration) {
+	ts.counter.Add(1)
+	ts.timeNs.Add(delta.Nanoseconds())
+}
+
 // Interval between batched stats updates pushed to the statsd instance.
 const updateInterval = 5 * time.Second
 

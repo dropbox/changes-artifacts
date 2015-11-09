@@ -1,6 +1,9 @@
 package database
 
 import (
+	"time"
+
+	"github.com/dropbox/changes-artifacts/common/stats"
 	"github.com/dropbox/changes-artifacts/model"
 	"gopkg.in/gorp.v1"
 )
@@ -42,7 +45,11 @@ func (db *GorpDatabase) RegisterEntities() {
 	db.dbmap.AddTableWithName(model.LogChunk{}, "logchunk").SetKeys(true, "Id")
 }
 
+var insertBucketTimer = stats.NewTimingStat("insert_bucket")
+
 func (db *GorpDatabase) InsertBucket(bucket *model.Bucket) *DatabaseError {
+	defer insertBucketTimer.AddTimeSince(time.Now())
+
 	if err := verifyBucketFields(bucket); err != nil {
 		return err
 	}
@@ -50,11 +57,17 @@ func (db *GorpDatabase) InsertBucket(bucket *model.Bucket) *DatabaseError {
 	return WrapInternalDatabaseError(db.dbmap.Insert(bucket))
 }
 
+var insertArtifactTimer = stats.NewTimingStat("insert_artifact")
+
 func (db *GorpDatabase) InsertArtifact(artifact *model.Artifact) *DatabaseError {
+	defer insertArtifactTimer.AddTimeSince(time.Now())
 	return WrapInternalDatabaseError(db.dbmap.Insert(artifact))
 }
 
+var insertLogChunkTimer = stats.NewTimingStat("insert_logchunk")
+
 func (db *GorpDatabase) InsertLogChunk(logChunk *model.LogChunk) *DatabaseError {
+	defer insertLogChunkTimer.AddTimeSince(time.Now())
 	return WrapInternalDatabaseError(db.dbmap.Insert(logChunk))
 }
 
