@@ -326,6 +326,14 @@ func CloseArtifact(ctx context.Context, artifact *model.Artifact, db database.Da
 	}
 }
 
+func newChunkedReader(lcs []model.LogChunk) io.Reader {
+	chunks := make([]io.Reader, 0, len(lcs))
+	for _, lc := range lcs {
+		chunks = append(chunks, bytes.NewReader(lc.ContentBytes))
+	}
+	return io.MultiReader(chunks...)
+}
+
 // Merges all of the individual chunks into a single object and stores it on s3.
 // The log chunks are stored in the database, while the object is uploaded to s3.
 func MergeLogChunks(ctx context.Context, artifact *model.Artifact, db database.Database, s3bucket *s3.Bucket) error {
@@ -353,58 +361,36 @@ func MergeLogChunks(ctx context.Context, artifact *model.Artifact, db database.D
 			return err
 		}
 
-		r, w := io.Pipe()
-		errChan := make(chan error)
-		uploadCompleteChan := make(chan bool)
 		fileName := artifact.DefaultS3URL()
 
-		// Asynchronously upload the object to s3 while reading from the r, w
-		// pipe. Thus anything written to "w" will be sent to S3.
-		go func() {
-			defer close(errChan)
-			defer close(uploadCompleteChan)
-			defer r.Close()
-			if err := s3bucket.PutReader(fileName, r, artifact.Size, "binary/octet-stream", s3.PublicRead); err != nil {
-				errChan <- err
-				return
-			}
+		r := newChunkedReader(logChunks)
 
-			uploadCompleteChan <- true
-			bytesUploadedCounter.Add(artifact.Size)
-		}()
-
-		for _, logChunk := range logChunks {
-			w.Write(logChunk.ContentBytes)
-		}
-
-		w.Close()
-
-		// Wait either for S3 upload to complete or for it to fail with an error.
-		// XXX This is a long operation and should probably be asynchronous from the
-		// actual HTTP request, and the client should poll to check when its uploaded.
-		select {
-		case _ = <-uploadCompleteChan:
-			artifact.State = model.UPLOADED
-			artifact.S3URL = fileName
-			if err := db.UpdateArtifact(artifact); err != nil {
-				return err
-			}
-
-			// From this point onwards, we will not send back any errors back to the user. If we are
-			// unable to delete logchunks, we log it to Sentry instead.
-			if n, err := db.DeleteLogChunksForArtifact(artifact.Id); err != nil {
-				sentry.ReportError(ctx, err)
-				return nil
-			} else if n != int64(len(logChunks)) {
-				sentry.ReportMessage(ctx,
-					fmt.Sprintf("Mismatch in number of logchunks while deleting logchunks for artifact %d:"+
-						"Expected: %d Actual: %d\n", artifact.Id, len(logChunks), n))
-			}
-
-			return nil
-		case err := <-errChan:
+		if err := s3bucket.PutReader(fileName, r, artifact.Size, "binary/octet-stream", s3.PublicRead); err != nil {
 			return err
 		}
+
+		bytesUploadedCounter.Add(artifact.Size)
+
+		// XXX This is a long operation and should probably be asynchronous from the
+		// actual HTTP request, and the client should poll to check when its uploaded.
+		artifact.State = model.UPLOADED
+		artifact.S3URL = fileName
+		if err := db.UpdateArtifact(artifact); err != nil {
+			return err
+		}
+
+		// From this point onwards, we will not send back any errors back to the user. If we are
+		// unable to delete logchunks, we log it to Sentry instead.
+		if n, err := db.DeleteLogChunksForArtifact(artifact.Id); err != nil {
+			sentry.ReportError(ctx, err)
+			return nil
+		} else if n != int64(len(logChunks)) {
+			sentry.ReportMessage(ctx,
+				fmt.Sprintf("Mismatch in number of logchunks while deleting logchunks for artifact %d:"+
+					"Expected: %d Actual: %d\n", artifact.Id, len(logChunks), n))
+		}
+
+		return nil
 
 	case model.WAITING_FOR_UPLOAD:
 		fallthrough

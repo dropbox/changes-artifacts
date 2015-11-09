@@ -436,6 +436,31 @@ func TestMergeLogChunks(t *testing.T) {
 	mockdb.On("ListLogChunksInArtifact", int64(2)).Return(nil, database.MockDatabaseError()).Once()
 	require.Error(t, MergeLogChunks(nil, &model.Artifact{Id: 2, State: model.APPEND_COMPLETE, Size: 10}, mockdb, nil))
 
+	{
+		// Stitching chunks succeeds, but uploading to S3 fails
+		mockdb.On("UpdateArtifact", &model.Artifact{
+			Id:       2,
+			State:    model.UPLOADING,
+			Size:     10,
+			Name:     "TestMergeLogChunks__artifactName",
+			BucketId: "TestMergeLogChunks__bucketName",
+		}).Return(nil).Once()
+		mockdb.On("ListLogChunksInArtifact", int64(2)).Return([]model.LogChunk{
+			model.LogChunk{ContentBytes: []byte("01234")},
+			model.LogChunk{ContentBytes: []byte("56789")},
+		}, nil).Once()
+		s3Server, s3Bucket := createS3Bucket(t)
+		s3Server.Quit()
+		require.Error(t, MergeLogChunks(sentry.CreateAndInstallSentryClient(context.TODO(), "", ""),
+			&model.Artifact{
+				Id:       2,
+				State:    model.APPEND_COMPLETE,
+				Size:     10,
+				Name:     "TestMergeLogChunks__artifactName",
+				BucketId: "TestMergeLogChunks__bucketName",
+			}, mockdb, s3Bucket))
+	}
+
 	// Stitching chunks and uploading to S3 successfully (but deleting logchunks fail)
 	mockdb.On("UpdateArtifact", &model.Artifact{
 		Id:       2,
