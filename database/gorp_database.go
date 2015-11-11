@@ -71,7 +71,10 @@ func (db *GorpDatabase) InsertLogChunk(logChunk *model.LogChunk) *DatabaseError 
 	return WrapInternalDatabaseError(db.dbmap.Insert(logChunk))
 }
 
+var updateBucketTimer = stats.NewTimingStat("update_bucket")
+
 func (db *GorpDatabase) UpdateBucket(bucket *model.Bucket) *DatabaseError {
+	defer updateBucketTimer.AddTimeSince(time.Now())
 	if err := verifyBucketFields(bucket); err != nil {
 		return err
 	}
@@ -93,7 +96,10 @@ func (db *GorpDatabase) ListBuckets() ([]model.Bucket, *DatabaseError) {
 	return buckets, nil
 }
 
+var getBucketTimer = stats.NewTimingStat("get_bucket")
+
 func (db *GorpDatabase) GetBucket(id string) (*model.Bucket, *DatabaseError) {
+	defer getBucketTimer.AddTimeSince(time.Now())
 	if bucket, err := db.dbmap.Get(model.Bucket{}, id); err != nil && !gorp.NonFatalError(err) {
 		return nil, WrapInternalDatabaseError(err)
 	} else if bucket == nil {
@@ -103,7 +109,10 @@ func (db *GorpDatabase) GetBucket(id string) (*model.Bucket, *DatabaseError) {
 	}
 }
 
+var listArtifactsTimer = stats.NewTimingStat("list_artifacts")
+
 func (db *GorpDatabase) ListArtifactsInBucket(bucketId string) ([]model.Artifact, *DatabaseError) {
+	defer listArtifactsTimer.AddTimeSince(time.Now())
 	artifacts := []model.Artifact{}
 	if _, err := db.dbmap.Select(&artifacts, "SELECT * FROM artifact WHERE bucketid = :bucketid",
 		map[string]interface{}{"bucketid": bucketId}); err != nil && !gorp.NonFatalError(err) {
@@ -122,7 +131,10 @@ func (db *GorpDatabase) UpdateArtifact(artifact *model.Artifact) *DatabaseError 
 	return nil
 }
 
+var listLogChunksTimer = stats.NewTimingStat("list_logchunks")
+
 func (db *GorpDatabase) ListLogChunksInArtifact(artifactId int64) ([]model.LogChunk, *DatabaseError) {
+	defer listLogChunksTimer.AddTimeSince(time.Now())
 	logChunks := []model.LogChunk{}
 	if _, err := db.dbmap.Select(&logChunks, "SELECT * FROM logchunk WHERE artifactid = :artifactid ORDER BY byteoffset ASC",
 		map[string]interface{}{"artifactid": artifactId}); err != nil && !gorp.NonFatalError(err) {
@@ -132,9 +144,12 @@ func (db *GorpDatabase) ListLogChunksInArtifact(artifactId int64) ([]model.LogCh
 	return logChunks, nil
 }
 
+var deleteLogChunksTimer = stats.NewTimingStat("delete_logchunks")
+
 // DeleteLogChunksForArtifact deletes all log chunks for an artifact.
 // Returns (number of deleted rows, err)
 func (db *GorpDatabase) DeleteLogChunksForArtifact(artifactID int64) (int64, *DatabaseError) {
+	defer deleteLogChunksTimer.AddTimeSince(time.Now())
 	res, err := db.dbmap.Exec("DELETE FROM logchunk WHERE artifactid = $1", artifactID)
 	if err != nil && !gorp.NonFatalError(err) {
 		rows, _ := res.RowsAffected()
@@ -149,7 +164,10 @@ func (db *GorpDatabase) DeleteLogChunksForArtifact(artifactID int64) (int64, *Da
 	return rows, nil
 }
 
+var getArtifactTimer = stats.NewTimingStat("get_artifact")
+
 func (db *GorpDatabase) GetArtifactByName(bucketId string, artifactName string) (*model.Artifact, *DatabaseError) {
+	defer getArtifactTimer.AddTimeSince(time.Now())
 	var artifact model.Artifact
 	if err := db.dbmap.SelectOne(&artifact, "SELECT * FROM artifact WHERE bucketid = :bucketid AND name = :artifactname",
 		map[string]string{"bucketid": bucketId, "artifactname": artifactName}); err != nil && !gorp.NonFatalError(err) {
@@ -159,29 +177,12 @@ func (db *GorpDatabase) GetArtifactByName(bucketId string, artifactName string) 
 	return &artifact, nil
 }
 
-func (db *GorpDatabase) GetArtifactById(artifactId int64) (*model.Artifact, *DatabaseError) {
-	var artifact model.Artifact
-	if err := db.dbmap.SelectOne(&artifact, "SELECT * FROM artifact WHERE artifactid = :artifactid",
-		map[string]interface{}{"artifactid": artifactId}); err != nil && !gorp.NonFatalError(err) {
-		return nil, WrapInternalDatabaseError(err)
-	}
-
-	return &artifact, nil
-}
-
-func (db *GorpDatabase) GetLastByteSeenForArtifact(artifactId int64) (int64, *DatabaseError) {
-	if nextByteOffset, err := db.dbmap.SelectInt(
-		"SELECT COALESCE(MAX(byteoffset + size), 0) as lastSeenByte FROM logchunk WHERE artifactid = :artifactid",
-		map[string]interface{}{"artifactid": artifactId}); err != nil && !gorp.NonFatalError(err) {
-		return 0, WrapInternalDatabaseError(err)
-	} else {
-		return nextByteOffset, nil
-	}
-}
+var getLastLogChunkTimer = stats.NewTimingStat("get_last_logchunk")
 
 // GetLastLogChunkSeenForArtifact returns the last full logchunk present in the database associated
 // with artifact.
 func (db *GorpDatabase) GetLastLogChunkSeenForArtifact(artifactID int64) (*model.LogChunk, *DatabaseError) {
+	defer getLastLogChunkTimer.AddTimeSince(time.Now())
 	var logChunk model.LogChunk
 	if err := db.dbmap.SelectOne(&logChunk, "SELECT * FROM logchunk WHERE artifactid = :artifactid ORDER BY byteoffset DESC LIMIT 1",
 		map[string]interface{}{"artifactid": artifactID}); err != nil && !gorp.NonFatalError(err) {

@@ -218,50 +218,6 @@ func (_m *MockDatabase) GetArtifactByName(bucket string, name string) (*model.Ar
 
 	return r0, r1
 }
-func (_m *MockDatabase) GetArtifactById(_a0 int64) (*model.Artifact, *DatabaseError) {
-	ret := _m.Called(_a0)
-
-	var r0 *model.Artifact
-	if rf, ok := ret.Get(0).(func(int64) *model.Artifact); ok {
-		r0 = rf(_a0)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*model.Artifact)
-		}
-	}
-
-	var r1 *DatabaseError
-	if rf, ok := ret.Get(1).(func(int64) *DatabaseError); ok {
-		r1 = rf(_a0)
-	} else {
-		if ret.Get(1) != nil {
-			r1 = ret.Get(1).(*DatabaseError)
-		}
-	}
-
-	return r0, r1
-}
-func (_m *MockDatabase) GetLastByteSeenForArtifact(_a0 int64) (int64, *DatabaseError) {
-	ret := _m.Called(_a0)
-
-	var r0 int64
-	if rf, ok := ret.Get(0).(func(int64) int64); ok {
-		r0 = rf(_a0)
-	} else {
-		r0 = ret.Get(0).(int64)
-	}
-
-	var r1 *DatabaseError
-	if rf, ok := ret.Get(1).(func(int64) *DatabaseError); ok {
-		r1 = rf(_a0)
-	} else {
-		if ret.Get(1) != nil {
-			r1 = ret.Get(1).(*DatabaseError)
-		}
-	}
-
-	return r0, r1
-}
 func (_m *MockDatabase) GetLastLogChunkSeenForArtifact(_a0 int64) (*model.LogChunk, *DatabaseError) {
 	ret := _m.Called(_a0)
 
