@@ -172,9 +172,9 @@ func main() {
 
 	onlyPerformMigrations := flag.Bool("migrations-only", false, "Only perform database migrations and quit")
 
-	dbMaxIdleConns := flag.Int("db-max-idle-conns", 50, "Maximum number of idle connections to the DB")
+	dbMaxIdleConns := flag.Int("db-max-idle-conns", 20, "Maximum number of idle connections to the DB")
 
-	dbMaxOpenConns := flag.Int("db-max-open-conns", 200, "Maximum number of open connections to the DB")
+	dbMaxOpenConns := flag.Int("db-max-open-conns", 50, "Maximum number of open connections to the DB")
 
 	shutdownTimeout := flag.Duration("shutdown-timeout", 15*time.Second, "Time to wait before closing active connections after SIGTERM signal has been recieved")
 
