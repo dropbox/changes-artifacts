@@ -49,7 +49,8 @@ type createArtifactReq struct {
 type createLogChunkReq struct {
 	ByteOffset int64
 	Size       int64
-	Content    string
+	Content    string // DEPRECATED in favor of Bytes
+	Bytes      []byte
 }
 
 // CreateArtifact creates a new artifact in a open bucket.
@@ -183,12 +184,23 @@ func AppendLogChunk(ctx context.Context, db database.Database, artifact *model.A
 		return NewHttpError(http.StatusBadRequest, "Invalid chunk size %d", logChunkReq.Size)
 	}
 
-	if len(logChunkReq.Content) == 0 {
-		return NewHttpError(http.StatusBadRequest, "Empty content string")
-	}
+	var contentBytes []byte
+	if len(logChunkReq.Bytes) != 0 {
+		// If request sent Bytes, use Bytes.
+		if int64(len(logChunkReq.Bytes)) != logChunkReq.Size {
+			return NewHttpError(http.StatusBadRequest, "Content length %d does not match indicated size %d", len(logChunkReq.Bytes), logChunkReq.Size)
+		}
+		contentBytes = logChunkReq.Bytes
+	} else {
+		// Otherwise, allow Content, for now.
+		if len(logChunkReq.Content) == 0 {
+			return NewHttpError(http.StatusBadRequest, "Empty content string")
+		}
 
-	if int64(len(logChunkReq.Content)) != logChunkReq.Size {
-		return NewHttpError(http.StatusBadRequest, "Content length %d does not match indicated size %d", len(logChunkReq.Content), logChunkReq.Size)
+		if int64(len(logChunkReq.Content)) != logChunkReq.Size {
+			return NewHttpError(http.StatusBadRequest, "Content length %d does not match indicated size %d", len(logChunkReq.Content), logChunkReq.Size)
+		}
+		contentBytes = []byte(logChunkReq.Content)
 	}
 
 	// Find previous chunk in DB - append only
@@ -202,7 +214,7 @@ func AppendLogChunk(ctx context.Context, db database.Database, artifact *model.A
 		// contents, we ignore this test and claim that a range mismatch occured.
 		if nextByteOffset != 0 && nextByteOffset == logChunkReq.ByteOffset+logChunkReq.Size {
 			if prevLogChunk, err := db.GetLastLogChunkSeenForArtifact(artifact.Id); err == nil {
-				if prevLogChunk != nil && prevLogChunk.ByteOffset == logChunkReq.ByteOffset && prevLogChunk.Size == logChunkReq.Size && string(prevLogChunk.ContentBytes) == logChunkReq.Content {
+				if prevLogChunk != nil && prevLogChunk.ByteOffset == logChunkReq.ByteOffset && prevLogChunk.Size == logChunkReq.Size && bytes.Equal(prevLogChunk.ContentBytes, contentBytes) {
 					sentry.ReportMessage(ctx, fmt.Sprintf("Received duplicate chunk for artifact %v of size %d at byte %d", artifact.Id, logChunkReq.Size, logChunkReq.ByteOffset))
 					return nil
 				}
@@ -223,7 +235,7 @@ func AppendLogChunk(ctx context.Context, db database.Database, artifact *model.A
 	logChunk := &model.LogChunk{
 		ArtifactId:   artifact.Id,
 		ByteOffset:   logChunkReq.ByteOffset,
-		ContentBytes: []byte(logChunkReq.Content),
+		ContentBytes: contentBytes,
 		Size:         logChunkReq.Size,
 	}
 

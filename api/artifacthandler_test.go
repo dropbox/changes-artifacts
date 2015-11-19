@@ -222,7 +222,7 @@ func getExpectedLogChunkToBeWritten() *model.LogChunk {
 func getLogChunkToAppend() *createLogChunkReq {
 	return &createLogChunkReq{
 		Size:       2,
-		Content:    "ab",
+		Bytes:      []byte("ab"),
 		ByteOffset: 0,
 	}
 }
