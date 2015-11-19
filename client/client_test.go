@@ -342,6 +342,47 @@ func TestAppendToChunkedArtifact(t *testing.T) {
 	require.Equal(t, 30, buf.Len())
 }
 
+func TestChunkedArtifactWriteIncompleteUnicodeCharacters(t *testing.T) {
+	const bucketName = "bucketName"
+	const ownerName = "ownerName"
+	const artifactName = "artifactName"
+
+	if testing.Short() {
+		t.Skip("Skipping end-to-end test in short mode.")
+	}
+
+	client := setup(t)
+
+	bucket, err := client.NewBucket(bucketName, ownerName, 31)
+	require.NotNil(t, bucket)
+	require.NoError(t, err)
+
+	// Append bytes to artifacts.
+	cartifact, err := bucket.NewChunkedArtifact(artifactName)
+	require.NotNil(t, cartifact)
+	require.NoError(t, err)
+
+	{
+		var buf bytes.Buffer
+		buf.WriteRune('☃')                                           // Rune of length 3 bytes
+		require.NoError(t, cartifact.AppendLog(string(buf.Next(2)))) // Send only first two bytes
+		require.NoError(t, cartifact.AppendLog(string(buf.Next(1)))) // Send last byte
+		require.NoError(t, cartifact.Flush())
+	}
+
+	{
+		reader, err := cartifact.GetContent()
+		require.NoError(t, err)
+
+		var buf bytes.Buffer
+		buf.ReadFrom(reader)
+		r, size, buferr := buf.ReadRune()
+		require.NoError(t, buferr)
+		require.Equal(t, '☃', r)
+		require.Equal(t, 3, size)
+	}
+}
+
 func TestChunkedArtifactBytes(t *testing.T) {
 	const bucketName = "bucketName"
 	const ownerName = "ownerName"

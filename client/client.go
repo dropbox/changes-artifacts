@@ -373,15 +373,15 @@ func (ai *ArtifactImpl) GetContentURL() string {
 // at the same they are streaming.
 type ChunkedArtifact struct {
 	*ArtifactImpl
-	offset       int
-	stringStream chan string
-	fatalErr     chan *ArtifactsError
-	complete     chan bool
+	offset     int
+	bytestream chan []byte
+	fatalErr   chan *ArtifactsError
+	complete   chan bool
 }
 
 func (artifact *ChunkedArtifact) init() *ChunkedArtifact {
 	artifact.offset = 0
-	artifact.stringStream = make(chan string, MAX_PENDING_REPORTS)
+	artifact.bytestream = make(chan []byte, MAX_PENDING_REPORTS)
 	artifact.complete = make(chan bool)
 	artifact.fatalErr = make(chan *ArtifactsError)
 	go artifact.pushLogChunks()
@@ -390,7 +390,7 @@ func (artifact *ChunkedArtifact) init() *ChunkedArtifact {
 }
 
 func (artifact *ChunkedArtifact) Flush() *ArtifactsError {
-	close(artifact.stringStream)
+	close(artifact.bytestream)
 
 	select {
 	case <-artifact.bucket.client.ctx.Done():
@@ -399,7 +399,7 @@ func (artifact *ChunkedArtifact) Flush() *ArtifactsError {
 		return err
 	case _ = <-artifact.complete:
 		// Recreate the stream and start pushing again.
-		artifact.stringStream = make(chan string, MAX_PENDING_REPORTS)
+		artifact.bytestream = make(chan []byte, MAX_PENDING_REPORTS)
 		go artifact.pushLogChunks()
 		return nil
 	}
@@ -423,7 +423,7 @@ func newTicker() *backoff.Ticker {
 
 func (artifact *ChunkedArtifact) pushLogChunks() {
 	var err *ArtifactsError
-	for logChunk := range artifact.stringStream {
+	for logChunk := range artifact.bytestream {
 		ticker := newTicker()
 		for {
 			// If our parent context has been cancelled, we discard state and get out.
@@ -437,7 +437,7 @@ func (artifact *ChunkedArtifact) pushLogChunks() {
 
 			_, err = artifact.bucket.client.postAPIJSON(fmt.Sprintf("/buckets/%s/artifacts/%s", artifact.bucket.bucket.Id, artifact.artifact.Name), map[string]interface{}{
 				"size":       len(logChunk),
-				"content":    logChunk,
+				"bytes":      logChunk,
 				"byteoffset": artifact.offset,
 			})
 
@@ -473,9 +473,10 @@ func (artifact *ChunkedArtifact) pushLogChunks() {
 // Appends the log chunk to the stream. This is asynchronous so any errors
 // in sending will occur when closing the artifact.
 func (artifact *ChunkedArtifact) AppendLog(chunk string) *ArtifactsError {
-	artifact.stringStream <- chunk
+	// TODO: There is no reason for this method to take in a string anymore.
+	// Update to use []byte or support io.Writer interface.
+	artifact.bytestream <- []byte(chunk)
 
-	// TODO: Verify that the created logchunk matches our expectations?
 	return nil
 }
 
