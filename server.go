@@ -28,66 +28,74 @@ import (
 
 	"github.com/dropbox/changes-artifacts/api"
 	"github.com/dropbox/changes-artifacts/common"
-	"github.com/dropbox/changes-artifacts/common/reqcontext"
 	"github.com/dropbox/changes-artifacts/common/sentry"
 	"github.com/dropbox/changes-artifacts/common/stats"
 	"github.com/dropbox/changes-artifacts/database"
 	"github.com/dropbox/changes-artifacts/model"
-	"github.com/go-martini/martini"
+	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 	"github.com/martini-contrib/render"
 	"github.com/rubenv/sql-migrate"
 )
 
-func HomeHandler(res http.ResponseWriter, req *http.Request) {
-	res.Write([]byte("Hello, I am Artie Facts, the artifact store that stores artifacts."))
+type RenderOnGin struct {
+	render.Render // This makes sure we don't have to create dummies for methods we don't use
+
+	ginCtx *gin.Context
 }
 
-func VersionHandler(res http.ResponseWriter, req *http.Request) {
-	res.Write([]byte(common.GetVersion()))
+func (r RenderOnGin) JSON(statusCode int, obj interface{}) {
+	r.ginCtx.JSON(statusCode, obj)
 }
 
-func bindBucket(ctx context.Context, w http.ResponseWriter, r render.Render, c martini.Context, params martini.Params, db database.Database) {
-	bucket, err := db.GetBucket(params["bucket_id"])
+var _ render.Render = (*RenderOnGin)(nil)
+
+func HomeHandler(c *gin.Context) {
+	c.String(http.StatusOK, "Hello, I am Artie Facts, the artifact store that stores artifacts.")
+}
+
+func VersionHandler(c *gin.Context) {
+	c.String(http.StatusOK, common.GetVersion())
+}
+
+func bindBucket(ctx context.Context, r render.Render, gc *gin.Context, db database.Database) {
+	bucketId := gc.Param("bucket_id")
+	bucket, err := db.GetBucket(bucketId)
 
 	if err != nil && err.EntityNotFound() {
 		// Don't log this error to Sentry
 		// Changes will hit this endpoint for non-existant buckets very often.
 		api.RespondWithErrorf(ctx, r, http.StatusNotFound, "Bucket not found")
+		gc.Abort()
 		return
 	}
 
 	if err != nil {
 		api.LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
+		gc.Abort()
 		return
 	}
 
 	if bucket == nil {
-		api.LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Got nil bucket without error for bucket: %s", params["bucket_id"])
+		api.LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Got nil bucket without error for bucket: %s", bucketId)
+		gc.Abort()
 		return
 	}
 
-	c.Map(bucket)
+	gc.Set("bucket", bucket)
 }
 
-func bindArtifact(ctx context.Context, w http.ResponseWriter, r render.Render, c martini.Context, params martini.Params, bucket *model.Bucket, db database.Database) {
-	if bucket == nil {
-		// Unfortunately, martini doesn't have a simple mechanism to stop method handling once an error
-		// has been found. So, we have to perform error checking all the way down
-		var artifact *model.Artifact
-		artifact = nil
-		c.Map(artifact)
-		return
-	}
-
-	artifact := api.GetArtifact(bucket, params["artifact_name"], db)
+func bindArtifact(ctx context.Context, r render.Render, gc *gin.Context, db database.Database, bucket *model.Bucket) {
+	artifactName := gc.Param("artifact_name")
+	artifact := api.GetArtifact(bucket, artifactName, db)
 
 	if artifact == nil {
 		api.LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Artifact not found")
+		gc.Abort()
 		return
 	}
 
-	c.Map(artifact)
+	gc.Set("artifact", artifact)
 }
 
 type config struct {
@@ -244,51 +252,74 @@ func main() {
 	stats.CreateStatsdClient(conf.StatsdURL, conf.StatsdPrefix)
 	defer stats.ShutdownStatsdClient()
 
-	m := martini.New()
-	m.Use(martini.Recovery())
-	m.Map(dbmap)
-	m.Map(s3Client)
-	m.Map(bucket)
-	m.Use(render.Renderer())
+	g := gin.New()
+	g.Use(gin.Recovery())
 
 	if *flagVerbose {
-		m.Use(martini.Logger())
+		g.Use(gin.Logger())
 	}
 
-	// Bind the gdb instance to be returned every time a Database interface is required.
-	m.MapTo(gdb, (*database.Database)(nil))
-	// Bind real clock implementation
-	m.MapTo(new(common.RealClock), (*common.Clock)(nil))
+	realClock := new(common.RealClock)
 
-	// XXX It would be nice to use something like https://github.com/guregu/kami which does all this
-	// in a very nice manner. It will also help us get rid of the crappy dependency injection magic
-	// that is done by Martini. Also, kami/httprouter is supposed to be faster(TM).
 	rootCtx := context.Background()
 	rootCtx = sentry.CreateAndInstallSentryClient(rootCtx, conf.Env, conf.SentryDSN)
-	m.Use(reqcontext.ContextHandler(rootCtx))
-	m.Use(stats.Counter())
-	m.Use(sentry.PanicHandler())
+	g.Use(stats.Counter())
 
-	r := martini.NewRouter()
-	// '/' url is used to determine if the server is up. Do not remove.
-	r.Get("/", HomeHandler)
-	r.Get("/version", VersionHandler)
-	r.Get("/buckets", api.ListBuckets)
-	r.Post("/buckets", api.HandleCreateBucket)
-	r.Group("/buckets/:bucket_id", func(br martini.Router) {
-		br.Get("", api.HandleGetBucket)
-		br.Post("/close", api.HandleCloseBucket)
-		br.Get("/artifacts", api.ListArtifacts)
-		br.Post("/artifacts", api.HandleCreateArtifact)
-		br.Group("/artifacts/:artifact_name", func(ar martini.Router) {
-			ar.Get("", api.HandleGetArtifact)
-			ar.Post("", api.PostArtifact)
-			ar.Post("/close", api.HandleCloseArtifact)
-			ar.Get("/content", api.GetArtifactContent)
-		}, bindArtifact)
-	}, bindBucket)
-	m.Action(r.Handle)
-	http.Handle("/", m)
+	g.GET("/", HomeHandler)
+	g.GET("/version", VersionHandler)
+	g.GET("/buckets", func(gc *gin.Context) {
+		api.ListBuckets(rootCtx, &RenderOnGin{ginCtx: gc}, gdb)
+	})
+	g.POST("/buckets/", func(gc *gin.Context) {
+		api.HandleCreateBucket(rootCtx, &RenderOnGin{ginCtx: gc}, gc.Request, gdb, realClock)
+	})
+
+	br := g.Group("/buckets/:bucket_id", func(gc *gin.Context) {
+		bindBucket(rootCtx, &RenderOnGin{ginCtx: gc}, gc, gdb)
+	})
+	{
+		br.GET("", func(gc *gin.Context) {
+			bkt := gc.MustGet("bucket").(*model.Bucket)
+			api.HandleGetBucket(rootCtx, &RenderOnGin{ginCtx: gc}, bkt)
+		})
+		br.POST("/close", func(gc *gin.Context) {
+			bkt := gc.MustGet("bucket").(*model.Bucket)
+			api.HandleCloseBucket(rootCtx, &RenderOnGin{ginCtx: gc}, gdb, bkt, bucket, realClock)
+		})
+		br.GET("/artifacts/", func(gc *gin.Context) {
+			bkt := gc.MustGet("bucket").(*model.Bucket)
+			api.ListArtifacts(rootCtx, &RenderOnGin{ginCtx: gc}, gc.Request, gdb, bkt)
+		})
+		br.POST("/artifacts", func(gc *gin.Context) {
+			bkt := gc.MustGet("bucket").(*model.Bucket)
+			api.HandleCreateArtifact(rootCtx, &RenderOnGin{ginCtx: gc}, gc.Request, gdb, bkt)
+		})
+
+		ar := br.Group("/artifacts/:artifact_name", func(gc *gin.Context) {
+			bkt := gc.MustGet("bucket").(*model.Bucket)
+			bindArtifact(rootCtx, &RenderOnGin{ginCtx: gc}, gc, gdb, bkt)
+		})
+		{
+			ar.GET("", func(gc *gin.Context) {
+				afct := gc.MustGet("artifact").(*model.Artifact)
+				api.HandleGetArtifact(rootCtx, &RenderOnGin{ginCtx: gc}, afct)
+			})
+			ar.POST("", func(gc *gin.Context) {
+				afct := gc.MustGet("artifact").(*model.Artifact)
+				api.PostArtifact(rootCtx, &RenderOnGin{ginCtx: gc}, gc.Request, gdb, bucket, afct)
+			})
+			ar.POST("/close", func(gc *gin.Context) {
+				afct := gc.MustGet("artifact").(*model.Artifact)
+				api.HandleCloseArtifact(rootCtx, &RenderOnGin{ginCtx: gc}, gdb, bucket, afct)
+			})
+			ar.GET("/content", func(gc *gin.Context) {
+				afct := gc.MustGet("artifact").(*model.Artifact)
+				api.GetArtifactContent(rootCtx, &RenderOnGin{ginCtx: gc}, gc.Writer, gdb, bucket, afct)
+			})
+		}
+	}
+
+	http.Handle("/", g)
 
 	// If the process gets a SIGTERM, it will close listening port allowing another server to bind and
 	// begin listening immediately. Any ongoing connections will be given 15 seconds (by default) to

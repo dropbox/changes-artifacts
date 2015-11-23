@@ -20,7 +20,6 @@ import (
 	"github.com/dropbox/changes-artifacts/common/stats"
 	"github.com/dropbox/changes-artifacts/database"
 	"github.com/dropbox/changes-artifacts/model"
-	"github.com/go-martini/martini"
 	"github.com/martini-contrib/render"
 	"gopkg.in/amz.v1/s3"
 )
@@ -127,7 +126,7 @@ func CreateArtifact(req createArtifactReq, bucket *model.Bucket, db database.Dat
 	return artifact, nil
 }
 
-func HandleCreateArtifact(ctx context.Context, r render.Render, req *http.Request, db database.Database, params martini.Params, bucket *model.Bucket) {
+func HandleCreateArtifact(ctx context.Context, r render.Render, req *http.Request, db database.Database, bucket *model.Bucket) {
 	if bucket == nil {
 		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "No bucket specified")
 		return
@@ -147,7 +146,7 @@ func HandleCreateArtifact(ctx context.Context, r render.Render, req *http.Reques
 	}
 }
 
-func ListArtifacts(ctx context.Context, r render.Render, req *http.Request, db database.Database, params martini.Params, bucket *model.Bucket) {
+func ListArtifacts(ctx context.Context, r render.Render, req *http.Request, db database.Database, bucket *model.Bucket) {
 	if bucket == nil {
 		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "No bucket specified")
 		return
@@ -420,7 +419,7 @@ func MergeLogChunks(ctx context.Context, artifact *model.Artifact, db database.D
 }
 
 // HandleCloseArtifact handles the HTTP request to close an artifact. See CloseArtifact for details.
-func HandleCloseArtifact(ctx context.Context, r render.Render, params martini.Params, db database.Database, s3bucket *s3.Bucket, artifact *model.Artifact) {
+func HandleCloseArtifact(ctx context.Context, r render.Render, db database.Database, s3bucket *s3.Bucket, artifact *model.Artifact) {
 	if artifact == nil {
 		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "No artifact specified")
 		return
@@ -434,7 +433,7 @@ func HandleCloseArtifact(ctx context.Context, r render.Render, params martini.Pa
 	r.JSON(http.StatusOK, map[string]interface{}{})
 }
 
-func GetArtifactContent(ctx context.Context, r render.Render, req *http.Request, res http.ResponseWriter, db database.Database, params martini.Params, s3bucket *s3.Bucket, artifact *model.Artifact) {
+func GetArtifactContent(ctx context.Context, r render.Render, res http.ResponseWriter, db database.Database, s3bucket *s3.Bucket, artifact *model.Artifact) {
 	if artifact == nil {
 		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "No artifact specified")
 		return

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-martini/martini"
+	"github.com/gin-gonic/gin"
 	"github.com/quipo/statsd"
 )
 
@@ -106,8 +106,8 @@ func ShutdownStatsdClient() {
 }
 
 // Counter counts number of requests made to the server
-func Counter() martini.Handler {
-	return func(res http.ResponseWriter, req *http.Request, c martini.Context) {
+func Counter() gin.HandlerFunc {
+	return func(_ *gin.Context) {
 		requestCounter.Add(1)
 	}
 }
