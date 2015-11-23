@@ -447,16 +447,10 @@ func GetArtifactContent(ctx context.Context, r render.Render, res http.ResponseW
 			LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
 			return
 		}
-		// Ideally, we'll use a Hijacker to take over the conn so that we can employ an io.Writer
-		// instead of loading the entire file into memory before writing it back out. But, for now, we
-		// will run the risk of OOM if large files need to be served.
-		var buf bytes.Buffer
-		_, err = buf.ReadFrom(reader)
-		if err != nil {
-			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, "Error reading upload buffer: %s", err)
+		if _, err = io.Copy(res, reader); err != nil {
+			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, "Error transferring artifact: %s", err)
 			return
 		}
-		res.Write(buf.Bytes())
 		return
 	case model.UPLOADING:
 		// Not done uploading to S3 yet. Error.
