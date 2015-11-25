@@ -48,7 +48,7 @@ type Artifact struct {
 	// Auto-generated globally unique id.
 	Id int64 `json:"id"`
 	// id that must be unique within a bucket (but not necessairly globally).
-	// For streamed artifacts this is often the file nane.
+	// For streamed artifacts this is often the file name.
 	Name string `json:"name"`
 	// This is deterministically generated as /<BucketId>/<Name> but in case we wish to
 	// switch conventions later we store it.

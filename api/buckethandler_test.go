@@ -7,8 +7,8 @@ import (
 	"github.com/dropbox/changes-artifacts/common"
 	"github.com/dropbox/changes-artifacts/database"
 	"github.com/dropbox/changes-artifacts/model"
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCreateBucket(t *testing.T) {

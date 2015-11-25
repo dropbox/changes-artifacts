@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/dropbox/changes-artifacts/database"
 	"github.com/dropbox/changes-artifacts/model"
 	"github.com/martini-contrib/render"
+	"github.com/moshee/airlift/contentdisposition"
 	"gopkg.in/amz.v1/s3"
 )
 
@@ -447,6 +449,7 @@ func GetArtifactContent(ctx context.Context, r render.Render, res http.ResponseW
 			LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
 			return
 		}
+		contentdisposition.SetFilename(res, filepath.Base(artifact.RelativePath))
 		if _, err = io.Copy(res, reader); err != nil {
 			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, "Error transferring artifact: %s", err)
 			return
@@ -465,6 +468,7 @@ func GetArtifactContent(ctx context.Context, r render.Render, res http.ResponseW
 			LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
 			return
 		}
+		contentdisposition.SetFilename(res, filepath.Base(artifact.RelativePath))
 		for _, logChunk := range logChunks {
 			res.Write(logChunk.ContentBytes)
 		}
