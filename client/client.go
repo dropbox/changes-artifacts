@@ -24,6 +24,14 @@ const MAX_PENDING_REPORTS = 100
 // Default timeout for any HTTP requests. On timeout, mark the operation as failed, but retriable.
 const DefaultReqTimeout = 30 * time.Second
 
+func ignoreBody(body io.ReadCloser, err *ArtifactsError) *ArtifactsError {
+	if body != nil {
+		body.Close()
+	}
+
+	return err
+}
+
 type ArtifactsError struct {
 	errStr    string
 	retriable bool
@@ -328,8 +336,7 @@ func (b *Bucket) parseArtifactListFromResponse(body io.ReadCloser) ([]Artifact, 
 }
 
 func (b *Bucket) Close() *ArtifactsError {
-	_, err := b.client.postAPIJSON(fmt.Sprintf("/buckets/%s/close", b.bucket.Id), map[string]interface{}{})
-	return err
+	return ignoreBody(b.client.postAPIJSON(fmt.Sprintf("/buckets/%s/close", b.bucket.Id), map[string]interface{}{}))
 }
 
 type Artifact interface {
@@ -435,11 +442,11 @@ func (artifact *ChunkedArtifact) pushLogChunks() {
 				return
 			}
 
-			_, err = artifact.bucket.client.postAPIJSON(fmt.Sprintf("/buckets/%s/artifacts/%s", artifact.bucket.bucket.Id, artifact.artifact.Name), map[string]interface{}{
+			err = ignoreBody(artifact.bucket.client.postAPIJSON(fmt.Sprintf("/buckets/%s/artifacts/%s", artifact.bucket.bucket.Id, artifact.artifact.Name), map[string]interface{}{
 				"size":       len(logChunk),
 				"bytes":      logChunk,
 				"byteoffset": artifact.offset,
-			})
+			}))
 
 			if err != nil {
 				if err.IsRetriable() {
@@ -482,10 +489,8 @@ func (artifact *ChunkedArtifact) AppendLog(chunk string) *ArtifactsError {
 
 func (a *StreamedArtifact) UploadArtifact(stream io.Reader) *ArtifactsError {
 	url := fmt.Sprintf("/buckets/%s/artifacts/%s", a.bucket.bucket.Id, a.artifact.Name)
-	_, err := a.bucket.client.postAPI(url, "application/octet-stream", stream)
-
 	// TODO: Verify that the artifact that was stored matches the one we just uploaded.
-	return err
+	return ignoreBody(a.bucket.client.postAPI(url, "application/octet-stream", stream))
 }
 
 func (a *ChunkedArtifact) Close() *ArtifactsError {
@@ -493,8 +498,7 @@ func (a *ChunkedArtifact) Close() *ArtifactsError {
 		return err
 	}
 
-	_, err := a.bucket.client.postAPIJSON(fmt.Sprintf("/buckets/%s/artifacts/%s/close", a.bucket.bucket.Id, a.artifact.Name), map[string]interface{}{})
-	return err
+	return ignoreBody(a.bucket.client.postAPIJSON(fmt.Sprintf("/buckets/%s/artifacts/%s/close", a.bucket.bucket.Id, a.artifact.Name), map[string]interface{}{}))
 }
 
 func (a ArtifactImpl) GetContent() (io.ReadCloser, *ArtifactsError) {
