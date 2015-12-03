@@ -427,14 +427,18 @@ func TestMergeLogChunks(t *testing.T) {
 	}).Return(database.MockDatabaseError()).Once()
 	require.Error(t, MergeLogChunks(nil, &model.Artifact{State: model.APPEND_COMPLETE, Size: 10}, mockdb, nil))
 
-	// DB Error while fetching logchunks
-	mockdb.On("UpdateArtifact", &model.Artifact{
-		Id:    2,
-		State: model.UPLOADING,
-		Size:  10,
-	}).Return(nil).Once()
-	mockdb.On("ListLogChunksInArtifact", int64(2)).Return(nil, database.MockDatabaseError()).Once()
-	require.Error(t, MergeLogChunks(nil, &model.Artifact{Id: 2, State: model.APPEND_COMPLETE, Size: 10}, mockdb, nil))
+	{
+		// DB Error while fetching logchunks
+		mockdb.On("UpdateArtifact", &model.Artifact{
+			Id:    2,
+			State: model.UPLOADING,
+			Size:  10,
+		}).Return(nil).Once()
+		mockdb.On("ListLogChunksInArtifact", int64(2), int64(0), int64(10)).Return(nil, database.MockDatabaseError()).Once()
+		s3Server, s3Bucket := createS3Bucket(t)
+		require.Error(t, MergeLogChunks(nil, &model.Artifact{Id: 2, State: model.APPEND_COMPLETE, Size: 10}, mockdb, s3Bucket))
+		s3Server.Quit()
+	}
 
 	{
 		// Stitching chunks succeeds, but uploading to S3 fails
@@ -445,9 +449,9 @@ func TestMergeLogChunks(t *testing.T) {
 			Name:     "TestMergeLogChunks__artifactName",
 			BucketId: "TestMergeLogChunks__bucketName",
 		}).Return(nil).Once()
-		mockdb.On("ListLogChunksInArtifact", int64(2)).Return([]model.LogChunk{
-			model.LogChunk{ContentBytes: []byte("01234")},
-			model.LogChunk{ContentBytes: []byte("56789")},
+		mockdb.On("ListLogChunksInArtifact", int64(2), int64(0), int64(10)).Return([]model.LogChunk{
+			model.LogChunk{ByteOffset: 0, Size: 5, ContentBytes: []byte("01234")},
+			model.LogChunk{ByteOffset: 5, Size: 5, ContentBytes: []byte("56789")},
 		}, nil).Once()
 		s3Server, s3Bucket := createS3Bucket(t)
 		s3Server.Quit()
@@ -462,6 +466,7 @@ func TestMergeLogChunks(t *testing.T) {
 	}
 
 	// Stitching chunks and uploading to S3 successfully (but deleting logchunks fail)
+	mockdb = &database.MockDatabase{}
 	mockdb.On("UpdateArtifact", &model.Artifact{
 		Id:       2,
 		State:    model.UPLOADING,
@@ -469,9 +474,9 @@ func TestMergeLogChunks(t *testing.T) {
 		Name:     "TestMergeLogChunks__artifactName",
 		BucketId: "TestMergeLogChunks__bucketName",
 	}).Return(nil).Once()
-	mockdb.On("ListLogChunksInArtifact", int64(2)).Return([]model.LogChunk{
-		model.LogChunk{ContentBytes: []byte("01234")},
-		model.LogChunk{ContentBytes: []byte("56789")},
+	mockdb.On("ListLogChunksInArtifact", int64(2), int64(0), int64(10)).Return([]model.LogChunk{
+		model.LogChunk{ByteOffset: 0, Size: 5, ContentBytes: []byte("01234")},
+		model.LogChunk{ByteOffset: 5, Size: 5, ContentBytes: []byte("56789")},
 	}, nil).Once()
 	mockdb.On("UpdateArtifact", &model.Artifact{
 		Id:       2,
@@ -501,9 +506,9 @@ func TestMergeLogChunks(t *testing.T) {
 		Name:     "TestMergeLogChunks__artifactName",
 		BucketId: "TestMergeLogChunks__bucketName",
 	}).Return(nil).Once()
-	mockdb.On("ListLogChunksInArtifact", int64(3)).Return([]model.LogChunk{
-		model.LogChunk{ContentBytes: []byte("01234")},
-		model.LogChunk{ContentBytes: []byte("56789")},
+	mockdb.On("ListLogChunksInArtifact", int64(3), int64(0), int64(10)).Return([]model.LogChunk{
+		model.LogChunk{ByteOffset: 0, Size: 5, ContentBytes: []byte("01234")},
+		model.LogChunk{ByteOffset: 5, Size: 5, ContentBytes: []byte("56789")},
 	}, nil).Once()
 	mockdb.On("DeleteLogChunksForArtifact", int64(3)).Return(int64(2), nil).Once()
 	mockdb.On("UpdateArtifact", &model.Artifact{

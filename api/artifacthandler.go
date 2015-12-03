@@ -7,10 +7,13 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -36,6 +39,9 @@ const MaxDuplicateFileNameResolutionAttempts = 5
 
 // Maximum artifact size => 200 MB
 const MaxArtifactSizeBytes = 200 * 1024 * 1024
+
+// Maximum number of bytes to fetch while returning chunked response.
+const MaxChunkedRequestBytes = 100000
 
 var bytesUploadedCounter = stats.NewStat("bytes_uploaded")
 
@@ -339,14 +345,6 @@ func CloseArtifact(ctx context.Context, artifact *model.Artifact, db database.Da
 	}
 }
 
-func newChunkedReader(lcs []model.LogChunk) io.Reader {
-	chunks := make([]io.Reader, 0, len(lcs))
-	for _, lc := range lcs {
-		chunks = append(chunks, bytes.NewReader(lc.ContentBytes))
-	}
-	return io.MultiReader(chunks...)
-}
-
 // Merges all of the individual chunks into a single object and stores it on s3.
 // The log chunks are stored in the database, while the object is uploaded to s3.
 func MergeLogChunks(ctx context.Context, artifact *model.Artifact, db database.Database, s3bucket *s3.Bucket) error {
@@ -369,14 +367,9 @@ func MergeLogChunks(ctx context.Context, artifact *model.Artifact, db database.D
 			return err
 		}
 
-		logChunks, err := db.ListLogChunksInArtifact(artifact.Id)
-		if err != nil {
-			return err
-		}
-
 		fileName := artifact.DefaultS3URL()
 
-		r := newChunkedReader(logChunks)
+		r := newLogChunkReaderWithReadahead(artifact, db)
 
 		if err := s3bucket.PutReader(fileName, r, artifact.Size, "binary/octet-stream", s3.PublicRead); err != nil {
 			return err
@@ -394,13 +387,9 @@ func MergeLogChunks(ctx context.Context, artifact *model.Artifact, db database.D
 
 		// From this point onwards, we will not send back any errors back to the user. If we are
 		// unable to delete logchunks, we log it to Sentry instead.
-		if n, err := db.DeleteLogChunksForArtifact(artifact.Id); err != nil {
+		if _, err := db.DeleteLogChunksForArtifact(artifact.Id); err != nil {
 			sentry.ReportError(ctx, err)
 			return nil
-		} else if n != int64(len(logChunks)) {
-			sentry.ReportMessage(ctx,
-				fmt.Sprintf("Mismatch in number of logchunks while deleting logchunks for artifact %d:"+
-					"Expected: %d Actual: %d\n", artifact.Id, len(logChunks), n))
 		}
 
 		return nil
@@ -435,7 +424,152 @@ func HandleCloseArtifact(ctx context.Context, r render.Render, db database.Datab
 	r.JSON(http.StatusOK, map[string]interface{}{})
 }
 
-func GetArtifactContent(ctx context.Context, r render.Render, res http.ResponseWriter, db database.Database, s3bucket *s3.Bucket, artifact *model.Artifact) {
+func intParam(v url.Values, paramName string, fallback int64) int64 {
+	if value := v.Get(paramName); value != "" {
+		if intVal, err := strconv.Atoi(value); err == nil {
+			return int64(intVal)
+		}
+
+		// TODO: should we should raise an error here because the query is badly formatted?
+	}
+
+	return fallback
+}
+
+func min(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+var errReadBeyondEOF = errors.New("Reading beyond EOF")
+
+func getByteRangeFromRequest(req *http.Request, artifact *model.Artifact) (int64, int64, error) {
+	queryParams := req.URL.Query()
+
+	// byteRangeBegin and byteRangeEnd are inclusive range markers within an artifact.
+	byteRangeBegin := max(intParam(queryParams, "offset", 0), 0)
+	if byteRangeBegin >= artifact.Size {
+		return 0, artifact.Size, errReadBeyondEOF
+	}
+
+	limit := max(intParam(queryParams, "limit", 0), 0)
+	if limit == 0 {
+		limit = MaxChunkedRequestBytes
+	}
+	limit = min(limit, MaxChunkedRequestBytes)
+
+	byteRangeEnd := min(artifact.Size-1, byteRangeBegin+limit-1)
+
+	return byteRangeBegin, byteRangeEnd, nil
+}
+
+// GetArtifactContentChunks lists artifact contents in a chunked form. Useful to poll for updates to
+// chunked artifacts. All artifact types are supported and chunks can be requested from arbitrary
+// locations within artifacts.
+//
+// This is primarily meant for Changes UI for log following. If you need to fetch byte ranges from the
+// store, it should be available directly at /content
+//
+// URL query parameters offset and limit can be used to control range of chunks to be fetched.
+// offset -> byte offset of the start of the range to be fetched (defaults to beginning of artifact)
+// limit  -> number of bytes to be fetched (defaults to 100KB)
+//
+// Negative values for any query parameter will cause it to be set to 0 (default)
+func GetArtifactContentChunks(ctx context.Context, r render.Render, req *http.Request, res http.ResponseWriter, db database.Database, s3bucket *s3.Bucket, artifact *model.Artifact) {
+	if artifact == nil {
+		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "No artifact specified")
+		return
+	}
+
+	type Chunk struct {
+		ID     int64  `json:"id"`
+		Offset int64  `json:"offset"`
+		Size   int64  `json:"size"`
+		Text   string `json:"text"`
+	}
+
+	type Result struct {
+		Chunks     []Chunk `json:"chunks"`
+		NextOffset int64   `json:"nextOffset"`
+	}
+
+	byteRangeBegin, byteRangeEnd, err := getByteRangeFromRequest(req, artifact)
+
+	if err != nil {
+		// If given range is not valid, steer client to a valid range.
+		r.JSON(http.StatusOK, &Result{Chunks: []Chunk{}, NextOffset: byteRangeEnd})
+		return
+	}
+
+	switch artifact.State {
+	case model.UPLOADING:
+		// No data to report right now. Wait till upload to S3 completes.
+		fallthrough
+	case model.WAITING_FOR_UPLOAD:
+		// Upload hasn't started. No data to report. Try again later.
+		r.JSON(http.StatusOK, &Result{Chunks: []Chunk{}, NextOffset: byteRangeBegin})
+		return
+	case model.UPLOADED:
+		// Fetch from S3
+		url := s3bucket.SignedURL(artifact.S3URL, time.Now().Add(30*time.Minute))
+		rq, err := http.NewRequest("GET", url, nil)
+		rq.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", byteRangeBegin, byteRangeEnd))
+		resp, err := http.DefaultClient.Do(rq)
+		if err != nil {
+			LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
+			return
+		}
+		if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
+			LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, fmt.Sprintf("Bad status code %d", resp.StatusCode))
+			return
+		}
+		var buf bytes.Buffer
+		n, err := buf.ReadFrom(resp.Body)
+		if err != nil {
+			LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
+			return
+		}
+		r.JSON(http.StatusOK, &Result{
+			Chunks:     []Chunk{Chunk{Offset: byteRangeBegin, Size: int64(n), Text: buf.String()}},
+			NextOffset: byteRangeBegin + int64(n),
+		})
+		return
+	case model.APPENDING:
+		fallthrough
+	case model.APPEND_COMPLETE:
+		// Pick from log chunks
+		rd := newLogChunkReader(artifact, db)
+		rd.Seek(byteRangeBegin, os.SEEK_SET)
+
+		bts := make([]byte, byteRangeEnd-byteRangeBegin+1)
+		n, err := runeLimitedRead(rd, bts)
+		if err != nil && err != io.EOF {
+			LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		if n > 0 {
+			r.JSON(http.StatusOK, &Result{
+				Chunks:     []Chunk{Chunk{Offset: byteRangeBegin, Size: int64(n), Text: string(bts[:n])}},
+				NextOffset: byteRangeBegin + int64(n),
+			})
+		} else {
+			r.JSON(http.StatusOK, &Result{Chunks: []Chunk{}, NextOffset: byteRangeBegin})
+		}
+		return
+	}
+}
+
+func GetArtifactContent(ctx context.Context, r render.Render, req *http.Request, res http.ResponseWriter, db database.Database, s3bucket *s3.Bucket, artifact *model.Artifact) {
 	if artifact == nil {
 		LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "No artifact specified")
 		return
@@ -463,15 +597,10 @@ func GetArtifactContent(ctx context.Context, r render.Render, res http.ResponseW
 		fallthrough
 	case model.APPEND_COMPLETE:
 		// Pick from log chunks
-		logChunks, err := db.ListLogChunksInArtifact(artifact.Id)
-		if err != nil {
-			LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
-			return
-		}
 		contentdisposition.SetFilename(res, filepath.Base(artifact.RelativePath))
-		for _, logChunk := range logChunks {
-			res.Write(logChunk.ContentBytes)
-		}
+		// All written bytes are immutable. So, unless size changes, all previously read contents can be cached.
+		res.Header().Add("ETag", strconv.Itoa(int(artifact.Size)))
+		http.ServeContent(res, req, filepath.Base(artifact.RelativePath), time.Time{}, newLogChunkReaderWithReadahead(artifact, db))
 		return
 	case model.WAITING_FOR_UPLOAD:
 		// Not started yet. Error

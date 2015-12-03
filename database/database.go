@@ -99,7 +99,7 @@ type Database interface {
 
 	UpdateArtifact(*model.Artifact) *DatabaseError
 
-	ListLogChunksInArtifact(int64) ([]model.LogChunk, *DatabaseError)
+	ListLogChunksInArtifact(artifactID int64, offset int64, limit int64) ([]model.LogChunk, *DatabaseError)
 
 	// Delete list of log chunks, primarily used to clean up log chunks after merging and uploading
 	DeleteLogChunksForArtifact(int64) (int64, *DatabaseError)

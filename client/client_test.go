@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -20,19 +22,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setup(t *testing.T) *ArtifactStoreClient {
+func setup(tb testing.TB) *ArtifactStoreClient {
 	url := "http://localhost:3000"
 
 	// Always wait for server to be running first, before setting up the DB.
 	// Otherwise, our surgery with the DB will interfere with any setup being done on the server
 	// during startup.
-	waitForServer(t, url)
-	setupDB(t)
+	waitForServer(tb, url)
+	setupDB(tb)
 
 	return NewArtifactStoreClient(url)
 }
 
-func waitForServer(t *testing.T, url string) {
+func waitForServer(tb testing.TB, url string) {
 	retries := 1000
 
 	for retries > 0 {
@@ -45,15 +47,15 @@ func waitForServer(t *testing.T, url string) {
 		}
 	}
 
-	t.Fatalf("Artifacts server did not come up in time")
+	tb.Fatalf("Artifacts server did not come up in time")
 }
 
-func setupDB(t *testing.T) {
+func setupDB(tb testing.TB) {
 	DB_STR := "postgres://artifacts:artifacts@artifactsdb/artifacts?sslmode=disable"
 
 	db, err := sql.Open("postgres", DB_STR)
 	if err != nil {
-		t.Fatalf("Error connecting to Postgres: %s", err)
+		tb.Fatalf("Error connecting to Postgres: %s", err)
 	}
 
 	dbmap := &gorp.DbMap{Db: db, Dialect: gorp.PostgresDialect{}}
@@ -67,7 +69,7 @@ func setupDB(t *testing.T) {
 	}
 
 	if n, err := migrate.Exec(db, "postgres", migrations, migrate.Down); err != nil {
-		t.Fatalf("Error resetting Postgres DB: %s", err)
+		tb.Fatalf("Error resetting Postgres DB: %s", err)
 	} else {
 		fmt.Printf("Completed %d DOWN migrations\n", n)
 	}
@@ -77,7 +79,7 @@ func setupDB(t *testing.T) {
 	// After a new migration is added, this number should be bumped up.
 	const maxMigrations = 4
 	if n, err := migrate.ExecMax(db, "postgres", migrations, migrate.Up, maxMigrations); err != nil {
-		t.Fatalf("Error recreating Postgres DB: %s", err)
+		tb.Fatalf("Error recreating Postgres DB: %s", err)
 	} else {
 		fmt.Printf("Completed %d UP migrations\n", n)
 	}
@@ -541,4 +543,81 @@ func TestCreateDuplicateArtifactRace(t *testing.T) {
 			seen[created] = true
 		}
 	}
+}
+
+func gen4KString() string {
+	var buf bytes.Buffer
+	for i := 0; i < 400; i++ {
+		buf.WriteString("0123456789")
+	}
+	return buf.String()
+}
+
+func BenchmarkMergingArtifacts(b *testing.B) {
+	bucketName := "bucketName"
+	ownerName := "ownerName"
+	artifactName := "artifactName"
+
+	if testing.Short() {
+		b.Skip("Skipping end-to-end test in short mode.")
+	}
+
+	client := setup(b)
+
+	bucket, _ := client.NewBucket(bucketName, ownerName, 31)
+	require.NotNil(b, bucket)
+
+	artifact, _ := bucket.NewChunkedArtifact(artifactName)
+	require.NotNil(b, artifact)
+
+	// Typical logchunk of size ~4KB
+	str := gen4KString()
+
+	// Typical artifact of ~1000 logchunks
+	for i := 0; i < 1000; i++ {
+		artifact.AppendLog(str)
+	}
+	// Make sure all logchunks are sent to API/DB.
+	artifact.Flush()
+
+	// Exercise logchunk stitching flow.
+	// Both fetching content and merging before writing to S3 use same logic to fetch chunks.
+	//
+	// 1000x4K chunks runs in ~20ms on a 4-core laptop (with synchronous_commit=off,fsync=off in
+	// Postgres)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		reader, _ := artifact.GetContent()
+		io.Copy(ioutil.Discard, reader)
+	}
+}
+
+func BenchmarkAppendLog(b *testing.B) {
+	bucketName := "bucketName"
+	ownerName := "ownerName"
+	artifactName := "artifactName"
+
+	if testing.Short() {
+		b.Skip("Skipping end-to-end test in short mode.")
+	}
+
+	client := setup(b)
+
+	bucket, _ := client.NewBucket(bucketName, ownerName, 31)
+	require.NotNil(b, bucket)
+
+	artifact, _ := bucket.NewChunkedArtifact(artifactName)
+	require.NotNil(b, artifact)
+
+	// Typical logchunk of size ~4KB
+	str := gen4KString()
+
+	// Each 4K chunks sent takes ~1.3ms on a 4-core laptop (with synchronous_commit=off,fsync=off in
+	// Postgres)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		artifact.AppendLog(str)
+	}
+	// Make sure all logchunks are sent to API/DB.
+	artifact.Flush()
 }

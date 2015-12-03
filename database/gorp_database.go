@@ -133,11 +133,14 @@ func (db *GorpDatabase) UpdateArtifact(artifact *model.Artifact) *DatabaseError 
 
 var listLogChunksTimer = stats.NewTimingStat("list_logchunks")
 
-func (db *GorpDatabase) ListLogChunksInArtifact(artifactId int64) ([]model.LogChunk, *DatabaseError) {
+func (db *GorpDatabase) ListLogChunksInArtifact(artifactID int64, byteBegin int64, byteEnd int64) ([]model.LogChunk, *DatabaseError) {
 	defer listLogChunksTimer.AddTimeSince(time.Now())
 	logChunks := []model.LogChunk{}
-	if _, err := db.dbmap.Select(&logChunks, "SELECT * FROM logchunk WHERE artifactid = :artifactid ORDER BY byteoffset ASC",
-		map[string]interface{}{"artifactid": artifactId}); err != nil && !gorp.NonFatalError(err) {
+	if _, err := db.dbmap.Select(&logChunks,
+		`SELECT * FROM logchunk
+		 WHERE artifactid = :artifactid AND byteoffset < :limit AND size + byteoffset >= :offset
+		 ORDER BY byteoffset ASC`,
+		map[string]interface{}{"artifactid": artifactID, "offset": byteBegin, "limit": byteEnd}); err != nil && !gorp.NonFatalError(err) {
 		return nil, WrapInternalDatabaseError(err)
 	}
 

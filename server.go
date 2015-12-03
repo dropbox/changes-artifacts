@@ -100,6 +100,7 @@ func bindArtifact(ctx context.Context, r render.Render, gc *gin.Context, db data
 
 type config struct {
 	DbConnstr    string
+	CorsURLs     string
 	Env          string
 	S3Server     string
 	S3Region     string
@@ -112,6 +113,7 @@ type config struct {
 }
 
 var defaultConfig = config{
+	CorsURLs:  "http://dropboxlocalhost.com:5000",
 	DbConnstr: "postgres://artifacts:artifacts@artifactsdb/artifacts?sslmode=disable",
 	S3Server:  "http://fakes3:4569",
 	S3Region:  "fakes3",
@@ -314,7 +316,14 @@ func main() {
 			})
 			ar.GET("/content", func(gc *gin.Context) {
 				afct := gc.MustGet("artifact").(*model.Artifact)
-				api.GetArtifactContent(rootCtx, &RenderOnGin{ginCtx: gc}, gc.Writer, gdb, bucket, afct)
+				api.GetArtifactContent(rootCtx, &RenderOnGin{ginCtx: gc}, gc.Request, gc.Writer, gdb, bucket, afct)
+			})
+			ar.GET("/chunked", func(gc *gin.Context) {
+				if conf.CorsURLs != "" {
+					gc.Writer.Header().Add("Access-Control-Allow-Origin", conf.CorsURLs)
+				}
+				afct := gc.MustGet("artifact").(*model.Artifact)
+				api.GetArtifactContentChunks(rootCtx, &RenderOnGin{ginCtx: gc}, gc.Request, gc.Writer, gdb, bucket, afct)
 			})
 		}
 	}
