@@ -681,18 +681,3 @@ func PutArtifact(ctx context.Context, artifact *model.Artifact, db database.Data
 	}
 	return nil
 }
-
-// Returns nil on error.
-//
-// TODO return errors on error
-func GetArtifact(bucket *model.Bucket, artifact_name string, db database.Database) *model.Artifact {
-	if bucket == nil {
-		return nil
-	}
-
-	if artifact, err := db.GetArtifactByName(bucket.Id, artifact_name); err != nil {
-		return nil
-	} else {
-		return artifact
-	}
-}

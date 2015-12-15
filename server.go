@@ -85,17 +85,31 @@ func bindBucket(ctx context.Context, r render.Render, gc *gin.Context, db databa
 	gc.Set("bucket", bucket)
 }
 
-func bindArtifact(ctx context.Context, r render.Render, gc *gin.Context, db database.Database, bucket *model.Bucket) {
+func bindArtifact(ctx context.Context, r render.Render, gc *gin.Context, db database.Database) *model.Artifact {
+	bucketId := gc.Param("bucket_id")
 	artifactName := gc.Param("artifact_name")
-	artifact := api.GetArtifact(bucket, artifactName, db)
+	artifact, err := db.GetArtifactByName(bucketId, artifactName)
+
+	if err != nil && err.EntityNotFound() {
+		api.LogAndRespondWithErrorf(ctx, r, http.StatusNotFound, "Artifact not found")
+		gc.Abort()
+		return nil
+	}
+
+	if err != nil {
+		api.LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
+		gc.Abort()
+		return nil
+	}
 
 	if artifact == nil {
-		api.LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Artifact not found")
+		api.LogAndRespondWithErrorf(ctx, r, http.StatusBadRequest, "Got nil artifact without error for artifact: %s/%s", bucketId, artifactName)
 		gc.Abort()
-		return
+		return nil
 	}
 
 	gc.Set("artifact", artifact)
+	return artifact
 }
 
 type config struct {
@@ -275,6 +289,13 @@ func main() {
 	g.POST("/buckets/", func(gc *gin.Context) {
 		api.HandleCreateBucket(rootCtx, &RenderOnGin{ginCtx: gc}, gc.Request, gdb, realClock)
 	})
+	g.POST("/buckets/:bucket_id/artifacts/:artifact_name", func(gc *gin.Context) {
+		render := &RenderOnGin{ginCtx: gc}
+		afct := bindArtifact(rootCtx, render, gc, gdb)
+		if !gc.IsAborted() {
+			api.PostArtifact(rootCtx, render, gc.Request, gdb, bucket, afct)
+		}
+	})
 
 	br := g.Group("/buckets/:bucket_id", func(gc *gin.Context) {
 		bindBucket(rootCtx, &RenderOnGin{ginCtx: gc}, gc, gdb)
@@ -298,17 +319,12 @@ func main() {
 		})
 
 		ar := br.Group("/artifacts/:artifact_name", func(gc *gin.Context) {
-			bkt := gc.MustGet("bucket").(*model.Bucket)
-			bindArtifact(rootCtx, &RenderOnGin{ginCtx: gc}, gc, gdb, bkt)
+			bindArtifact(rootCtx, &RenderOnGin{ginCtx: gc}, gc, gdb)
 		})
 		{
 			ar.GET("", func(gc *gin.Context) {
 				afct := gc.MustGet("artifact").(*model.Artifact)
 				api.HandleGetArtifact(rootCtx, &RenderOnGin{ginCtx: gc}, afct)
-			})
-			ar.POST("", func(gc *gin.Context) {
-				afct := gc.MustGet("artifact").(*model.Artifact)
-				api.PostArtifact(rootCtx, &RenderOnGin{ginCtx: gc}, gc.Request, gdb, bucket, afct)
 			})
 			ar.POST("/close", func(gc *gin.Context) {
 				afct := gc.MustGet("artifact").(*model.Artifact)
