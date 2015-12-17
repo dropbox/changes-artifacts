@@ -499,6 +499,7 @@ func GetArtifactContentChunks(ctx context.Context, r render.Render, req *http.Re
 
 	type Result struct {
 		Chunks     []Chunk `json:"chunks"`
+		EOF        bool    `json:"eof"`
 		NextOffset int64   `json:"nextOffset"`
 	}
 
@@ -506,7 +507,7 @@ func GetArtifactContentChunks(ctx context.Context, r render.Render, req *http.Re
 
 	if err != nil {
 		// If given range is not valid, steer client to a valid range.
-		r.JSON(http.StatusOK, &Result{Chunks: []Chunk{}, NextOffset: byteRangeEnd})
+		r.JSON(http.StatusOK, &Result{Chunks: []Chunk{}, EOF: err == errReadBeyondEOF && artifact.State == model.UPLOADED, NextOffset: byteRangeEnd})
 		return
 	}
 
@@ -538,9 +539,12 @@ func GetArtifactContentChunks(ctx context.Context, r render.Render, req *http.Re
 			LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
 			return
 		}
+
+		nextOffset := byteRangeBegin + int64(n)
 		r.JSON(http.StatusOK, &Result{
 			Chunks:     []Chunk{Chunk{Offset: byteRangeBegin, Size: int64(n), Text: buf.String()}},
-			NextOffset: byteRangeBegin + int64(n),
+			EOF:        nextOffset == artifact.Size,
+			NextOffset: nextOffset,
 		})
 		return
 	case model.APPENDING:
