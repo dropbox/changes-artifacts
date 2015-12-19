@@ -215,8 +215,8 @@ func TestGetByteRangeFromRequest(t *testing.T) {
 		{query: "/chunked?offset=-1&limit=20", artifactSize: 100, expectedBegin: 0, expectedEnd: 19, expectError: false},
 		{query: "/chunked?offset=0&limit=-1", artifactSize: 100, expectedBegin: 0, expectedEnd: 99, expectError: false},
 		{query: "/chunked?offset=99", artifactSize: 100, expectedBegin: 99, expectedEnd: 99, expectError: false},
-		{query: "/chunked", artifactSize: 2000000, expectedBegin: 0, expectedEnd: 99999, expectError: false},
-		{query: "/chunked?limit=2000000", artifactSize: 2000000, expectedBegin: 0, expectedEnd: 99999, expectError: false},
+		{query: "/chunked", artifactSize: 2000000, expectedBegin: 0, expectedEnd: 999999, expectError: false},
+		{query: "/chunked?limit=2000000", artifactSize: 2000000, expectedBegin: 0, expectedEnd: 999999, expectError: false},
 	}
 
 	for _, c := range cases {

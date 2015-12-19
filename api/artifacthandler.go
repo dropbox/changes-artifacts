@@ -41,7 +41,7 @@ const MaxDuplicateFileNameResolutionAttempts = 5
 const MaxArtifactSizeBytes = 200 * 1024 * 1024
 
 // Maximum number of bytes to fetch while returning chunked response.
-const MaxChunkedRequestBytes = 100000
+const MaxChunkedRequestBytes = 1000000
 
 var bytesUploadedCounter = stats.NewStat("bytes_uploaded")
 
