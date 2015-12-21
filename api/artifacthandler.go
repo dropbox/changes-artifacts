@@ -648,7 +648,6 @@ func PutArtifact(ctx context.Context, artifact *model.Artifact, db database.Data
 		return fmt.Errorf("Content length %d does not match expected file size %d", fileSize, artifact.Size)
 	}
 
-	// XXX Do we need to commit here or is this handled transparently?
 	artifact.State = model.UPLOADING
 	if err := db.UpdateArtifact(artifact); err != nil {
 		return err
@@ -672,8 +671,14 @@ func PutArtifact(ctx context.Context, artifact *model.Artifact, db database.Data
 		return nil
 	}
 
+	b := new(bytes.Buffer)
+	// Note: Storing entire contents of uploaded artifact in memory can cause OOMS.
+	if n, err := io.CopyN(b, req.Body, artifact.Size); err != nil {
+		return cleanupAndReturn(fmt.Errorf("Error reading from request body (for artifact %s/%s, bytes (%d/%d) read): %s", artifact.BucketId, artifact.Name, n, artifact.Size, err))
+	}
 	fileName := artifact.DefaultS3URL()
-	if err := bucket.PutReader(fileName, req.Body, artifact.Size, "binary/octet-stream", s3.PublicRead); err != nil {
+
+	if err := bucket.PutReader(fileName, b, artifact.Size, "binary/octet-stream", s3.PublicRead); err != nil {
 		return cleanupAndReturn(fmt.Errorf("Error uploading to S3: %s", err))
 	}
 	bytesUploadedCounter.Add(artifact.Size)

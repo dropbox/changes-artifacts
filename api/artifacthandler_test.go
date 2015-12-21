@@ -361,6 +361,39 @@ func TestPutArtifactToS3Successfully(t *testing.T) {
 	// mockdb.AssertExpectations(t)
 }
 
+func TestPutArtifactShortWrite(t *testing.T) {
+	mockdb := &database.MockDatabase{}
+
+	// First change to UPLOADING state...
+	mockdb.On("UpdateArtifact", &model.Artifact{
+		State:    model.UPLOADING,
+		Size:     10,
+		Name:     "TestPutArtifact__artifactName",
+		BucketId: "TestPutArtifact__bucketName",
+	}).Return(nil).Once()
+
+	// Then change to ERROR state.
+	mockdb.On("UpdateArtifact", &model.Artifact{
+		State:    model.ERROR,
+		Size:     10,
+		Name:     "TestPutArtifact__artifactName",
+		BucketId: "TestPutArtifact__bucketName",
+	}).Return(nil).Once()
+
+	s3Server, s3Bucket := createS3Bucket(t)
+	require.Error(t, PutArtifact(context.Background(), &model.Artifact{
+		State:    model.WAITING_FOR_UPLOAD,
+		Size:     10,
+		Name:     "TestPutArtifact__artifactName",
+		BucketId: "TestPutArtifact__bucketName",
+	}, mockdb, s3Bucket, PutArtifactReq{
+		ContentLength: "10",
+		Body:          bytes.NewBufferString("012345678"),
+	}))
+
+	s3Server.Quit()
+}
+
 func TestPutArtifactToS3WithS3Errors(t *testing.T) {
 	mockdb := &database.MockDatabase{}
 
