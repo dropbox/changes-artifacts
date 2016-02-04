@@ -523,6 +523,10 @@ func GetArtifactContentChunks(ctx context.Context, r render.Render, req *http.Re
 		// Fetch from S3
 		url := s3bucket.SignedURL(artifact.S3URL, time.Now().Add(30*time.Minute))
 		rq, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
+			return
+		}
 		rq.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", byteRangeBegin, byteRangeEnd))
 		resp, err := http.DefaultClient.Do(rq)
 		if err != nil {
@@ -582,13 +586,20 @@ func GetArtifactContent(ctx context.Context, r render.Render, req *http.Request,
 	switch artifact.State {
 	case model.UPLOADED:
 		// Fetch from S3
-		reader, err := s3bucket.GetReader(artifact.S3URL)
+		url := s3bucket.SignedURL(artifact.S3URL, time.Now().Add(30*time.Minute))
+		rq, err := http.NewRequest("GET", url, nil)
+		if byteRanges := req.Header.Get("Range"); byteRanges != "" {
+			// If request contains Range: headers, pass them right through to S3.
+			// TODO(anupc): Validation? We're sending user input through to the data store.
+			rq.Header.Add("Range", byteRanges)
+		}
+		resp, err := http.DefaultClient.Do(rq)
 		if err != nil {
 			LogAndRespondWithError(ctx, r, http.StatusInternalServerError, err)
 			return
 		}
 		contentdisposition.SetFilename(res, filepath.Base(artifact.RelativePath))
-		if _, err = io.Copy(res, reader); err != nil {
+		if _, err = io.Copy(res, resp.Body); err != nil {
 			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, "Error transferring artifact: %s", err)
 			return
 		}
