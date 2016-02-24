@@ -43,6 +43,9 @@ const MaxArtifactSizeBytes = 200 * 1024 * 1024
 // Maximum number of bytes to fetch while returning chunked response.
 const MaxChunkedRequestBytes = 1000000
 
+// MaxUploadAttempts is the maximum number of attempts to upload an artifact to S3.
+const MaxUploadAttempts = 3
+
 var bytesUploadedCounter = stats.NewStat("bytes_uploaded")
 
 type createArtifactReq struct {
@@ -371,11 +374,9 @@ func MergeLogChunks(ctx context.Context, artifact *model.Artifact, db database.D
 
 		r := newLogChunkReaderWithReadahead(artifact, db)
 
-		if err := s3bucket.PutReader(fileName, r, artifact.Size, "binary/octet-stream", s3.PublicRead); err != nil {
+		if err := uploadArtifactToS3(s3bucket, fileName, artifact.Size, r); err != nil {
 			return err
 		}
-
-		bytesUploadedCounter.Add(artifact.Size)
 
 		// XXX This is a long operation and should probably be asynchronous from the
 		// actual HTTP request, and the client should poll to check when its uploaded.
@@ -624,6 +625,31 @@ func GetArtifactContent(ctx context.Context, r render.Render, req *http.Request,
 	}
 }
 
+func uploadArtifactToS3(bucket *s3.Bucket, artifactName string, artifactSize int64, contentReader io.ReadSeeker) error {
+	attempts := 0
+
+	for {
+		attempts++
+		// Rewind Seeker to beginning, required if we had already read a few bytes from it before.
+		if _, err := contentReader.Seek(0, os.SEEK_SET); err != nil {
+			return err
+		}
+
+		if err := bucket.PutReader(artifactName, contentReader, artifactSize, "binary/octet-stream", s3.PublicRead); err != nil {
+			if attempts < MaxUploadAttempts {
+				log.Printf("[Attempt %d/%d] Error uploading to S3: %s", attempts, MaxUploadAttempts, err)
+				continue
+			}
+			return fmt.Errorf("Error uploading to S3: %s", err)
+		}
+
+		bytesUploadedCounter.Add(artifactSize)
+		return nil
+	}
+
+	return nil // This should never happen - only here to satisfy the compiler
+}
+
 type PutArtifactReq struct {
 	ContentLength string
 	Body          io.Reader
@@ -689,10 +715,9 @@ func PutArtifact(ctx context.Context, artifact *model.Artifact, db database.Data
 	}
 	fileName := artifact.DefaultS3URL()
 
-	if err := bucket.PutReader(fileName, b, artifact.Size, "binary/octet-stream", s3.PublicRead); err != nil {
-		return cleanupAndReturn(fmt.Errorf("Error uploading to S3: %s", err))
+	if err := uploadArtifactToS3(bucket, fileName, artifact.Size, bytes.NewReader(b.Bytes())); err != nil {
+		return cleanupAndReturn(err)
 	}
-	bytesUploadedCounter.Add(artifact.Size)
 
 	artifact.State = model.UPLOADED
 	artifact.S3URL = fileName

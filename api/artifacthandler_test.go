@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"golang.org/x/net/context"
@@ -19,27 +20,40 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func createS3Bucket(t *testing.T) (*s3test.Server, *s3.Bucket) {
-	s3Server, err := s3test.NewServer(&s3test.Config{Send409Conflict: true})
-	if err != nil {
-		t.Fatalf("Error bringing up fake s3 server: %s\n", err)
-	}
-
-	t.Logf("Fake S3 server up at %s\n", s3Server.URL())
-
+func getS3Bucket(t *testing.T, url string, doCreate bool) *s3.Bucket {
 	s3Client := s3.New(aws.Auth{AccessKey: "abc", SecretKey: "123"}, aws.Region{
 		Name:                 "fake-artifacts-test-region",
-		S3Endpoint:           s3Server.URL(),
+		S3Endpoint:           url,
 		S3LocationConstraint: true,
 		Sign:                 aws.SignV2,
 	})
 
 	s3Bucket := s3Client.Bucket("fake-artifacts-store-bucket")
-	if err := s3Bucket.PutBucket(s3.Private); err != nil {
-		t.Fatalf("Error creating s3 bucket: %s\n", err)
+	if doCreate {
+		if err := s3Bucket.PutBucket(s3.Private); err != nil {
+			t.Fatalf("Error creating s3 bucket: %s\n", err)
+		}
 	}
 
-	return s3Server, s3Bucket
+	return s3Bucket
+}
+
+func fakeS3ServerWithBucket(t *testing.T, f http.HandlerFunc) (*httptest.Server, *s3.Bucket) {
+	ts := httptest.NewServer(http.HandlerFunc(f))
+	t.Logf("Fake S3 Server up at %s\n", ts.URL)
+
+	return ts, getS3Bucket(t, ts.URL, false)
+}
+
+func testS3ServerWithBucket(t *testing.T) (*s3test.Server, *s3.Bucket) {
+	s3Server, err := s3test.NewServer(&s3test.Config{Send409Conflict: true})
+	if err != nil {
+		t.Fatalf("Error bringing up fake s3 server: %s\n", err)
+	}
+
+	t.Logf("S3 Test Server up at %s\n", s3Server.URL())
+
+	return s3Server, getS3Bucket(t, s3Server.URL(), true)
 }
 
 func TestCreateArtifact(t *testing.T) {
@@ -345,7 +359,7 @@ func TestPutArtifactToS3Successfully(t *testing.T) {
 		BucketId: "TestPutArtifact__bucketName",
 	}).Return(nil).Once()
 
-	s3Server, s3Bucket := createS3Bucket(t)
+	s3Server, s3Bucket := testS3ServerWithBucket(t)
 	require.NoError(t, PutArtifact(context.Background(), &model.Artifact{
 		State:    model.WAITING_FOR_UPLOAD,
 		Size:     10,
@@ -380,7 +394,7 @@ func TestPutArtifactShortWrite(t *testing.T) {
 		BucketId: "TestPutArtifact__bucketName",
 	}).Return(nil).Once()
 
-	s3Server, s3Bucket := createS3Bucket(t)
+	s3Server, s3Bucket := testS3ServerWithBucket(t)
 	require.Error(t, PutArtifact(context.Background(), &model.Artifact{
 		State:    model.WAITING_FOR_UPLOAD,
 		Size:     10,
@@ -413,7 +427,7 @@ func TestPutArtifactToS3WithS3Errors(t *testing.T) {
 		BucketId: "TestPutArtifact__bucketName",
 	}).Return(nil).Once()
 
-	s3Server, s3Bucket := createS3Bucket(t)
+	s3Server, s3Bucket := testS3ServerWithBucket(t)
 	// Terminate the s3 server to simulate s3 errors. We don't differentiate
 	// between different s3 errors. So, this should handle all cases.
 	s3Server.Quit()
@@ -429,6 +443,52 @@ func TestPutArtifactToS3WithS3Errors(t *testing.T) {
 	}))
 
 	// mockdb.AssertExpectations(t)
+}
+
+func TestPutArtifactToS3WithRetries(t *testing.T) {
+	mockdb := &database.MockDatabase{}
+
+	// First change to UPLOADING state...
+	mockdb.On("UpdateArtifact", &model.Artifact{
+		State:    model.UPLOADING,
+		Size:     10,
+		Name:     "TestPutArtifact__artifactName",
+		BucketId: "TestPutArtifact__bucketName",
+	}).Return(nil).Once()
+
+	// Then change to UPLOADED state.
+	mockdb.On("UpdateArtifact", &model.Artifact{
+		State:    model.UPLOADED,
+		Size:     10,
+		Name:     "TestPutArtifact__artifactName",
+		BucketId: "TestPutArtifact__bucketName",
+		S3URL:    "/TestPutArtifact__bucketName/TestPutArtifact__artifactName",
+	}).Return(nil).Once()
+
+	reqCounter := 0
+	s3Server, s3Bucket := fakeS3ServerWithBucket(t, func(w http.ResponseWriter, r *http.Request) {
+		reqCounter++
+
+		if reqCounter <= 2 {
+			// Simulate failure first 2 times
+			w.WriteHeader(http.StatusInternalServerError)
+		} else {
+			// Pass on 3rd attempt
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+
+	require.NoError(t, PutArtifact(context.Background(), &model.Artifact{
+		State:    model.WAITING_FOR_UPLOAD,
+		Size:     10,
+		Name:     "TestPutArtifact__artifactName",
+		BucketId: "TestPutArtifact__bucketName",
+	}, mockdb, s3Bucket, PutArtifactReq{
+		ContentLength: "10",
+		Body:          bytes.NewBufferString("0123456789"),
+	}))
+
+	s3Server.Close()
 }
 
 func TestMergeLogChunks(t *testing.T) {
@@ -467,8 +527,8 @@ func TestMergeLogChunks(t *testing.T) {
 			State: model.UPLOADING,
 			Size:  10,
 		}).Return(nil).Once()
-		mockdb.On("ListLogChunksInArtifact", int64(2), int64(0), int64(10)).Return(nil, database.MockDatabaseError()).Once()
-		s3Server, s3Bucket := createS3Bucket(t)
+		mockdb.On("ListLogChunksInArtifact", int64(2), int64(0), int64(10)).Return(nil, database.MockDatabaseError()).Times(MaxUploadAttempts)
+		s3Server, s3Bucket := testS3ServerWithBucket(t)
 		require.Error(t, MergeLogChunks(nil, &model.Artifact{Id: 2, State: model.APPEND_COMPLETE, Size: 10}, mockdb, s3Bucket))
 		s3Server.Quit()
 	}
@@ -486,7 +546,7 @@ func TestMergeLogChunks(t *testing.T) {
 			model.LogChunk{ByteOffset: 0, Size: 5, ContentBytes: []byte("01234")},
 			model.LogChunk{ByteOffset: 5, Size: 5, ContentBytes: []byte("56789")},
 		}, nil).Once()
-		s3Server, s3Bucket := createS3Bucket(t)
+		s3Server, s3Bucket := testS3ServerWithBucket(t)
 		s3Server.Quit()
 		require.Error(t, MergeLogChunks(sentry.CreateAndInstallSentryClient(context.TODO(), "", ""),
 			&model.Artifact{
@@ -520,7 +580,7 @@ func TestMergeLogChunks(t *testing.T) {
 		Size:     10,
 	}).Return(nil).Once()
 	mockdb.On("DeleteLogChunksForArtifact", int64(2)).Return(int64(0), database.MockDatabaseError()).Once()
-	s3Server, s3Bucket := createS3Bucket(t)
+	s3Server, s3Bucket := testS3ServerWithBucket(t)
 	require.NoError(t, MergeLogChunks(sentry.CreateAndInstallSentryClient(context.TODO(), "", ""),
 		&model.Artifact{
 			Id:       2,
@@ -552,7 +612,7 @@ func TestMergeLogChunks(t *testing.T) {
 		BucketId: "TestMergeLogChunks__bucketName",
 		Size:     10,
 	}).Return(nil).Once()
-	s3Server, s3Bucket = createS3Bucket(t)
+	s3Server, s3Bucket = testS3ServerWithBucket(t)
 	require.NoError(t, MergeLogChunks(nil, &model.Artifact{
 		Id:       3,
 		State:    model.APPEND_COMPLETE,
