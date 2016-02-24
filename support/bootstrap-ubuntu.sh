@@ -3,7 +3,7 @@
 export DEBIAN_FRONTEND=noninteractive
 
 install_go() {
-  GO_VERSION=1.5.1
+  GO_VERSION=1.6
   re=\\bgo$GO_VERSION\\b
 
   if [ -x /usr/local/go/bin/go ] && [[ `/usr/local/go/bin/go version` =~ $re ]]
@@ -15,7 +15,7 @@ install_go() {
   sudo rm -rf /usr/local/go
   echo "Installing Go binary...."
   cd /tmp
-  wget -O go${GO_VERSION}.linux-amd64.tar.gz -q http://golang.org/dl/go${GO_VERSION}.linux-amd64.tar.gz
+  wget -O go${GO_VERSION}.linux-amd64.tar.gz -q https://golang.org/dl/go${GO_VERSION}.linux-amd64.tar.gz
   sudo tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
   echo "Installed Go binary...."
 
