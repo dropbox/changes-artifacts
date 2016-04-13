@@ -489,8 +489,31 @@ func (artifact *ChunkedArtifact) AppendLog(chunk string) *ArtifactsError {
 
 func (a *StreamedArtifact) UploadArtifact(stream io.Reader) *ArtifactsError {
 	url := fmt.Sprintf("/buckets/%s/artifacts/%s", a.bucket.bucket.Id, a.artifact.Name)
-	// TODO: Verify that the artifact that was stored matches the one we just uploaded.
-	return ignoreBody(a.bucket.client.postAPI(url, "application/octet-stream", stream))
+	ticker := newTicker()
+	defer ticker.Stop()
+
+	for {
+		// If our parent context has been cancelled, we discard state and get out.
+		select {
+		case <-ticker.C:
+		case <-a.bucket.client.ctx.Done():
+			return NewTerminalError("Client context has closed during artifact upload. Bailing out without any further retries.")
+		}
+
+		err := ignoreBody(a.bucket.client.postAPI(url, "application/octet-stream", stream))
+
+		if err == nil {
+			// TODO: Verify that the artifact that was stored matches the one we just uploaded.
+			return nil
+		}
+
+		if err.IsRetriable() {
+			// Let's retry the request after a backoff
+			continue
+		} else {
+			return err
+		}
+	}
 }
 
 func (a *ChunkedArtifact) Close() *ArtifactsError {
