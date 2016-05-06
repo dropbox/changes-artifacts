@@ -604,8 +604,9 @@ func GetArtifactContent(ctx context.Context, r render.Render, req *http.Request,
 			return
 		}
 		contentdisposition.SetFilename(res, filepath.Base(artifact.RelativePath))
-		if _, err = io.Copy(res, resp.Body); err != nil {
-			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, "Error transferring artifact: %s", err)
+		res.Header().Add("Content-Length", strconv.Itoa(int(artifact.Size)))
+		if n, err := io.CopyN(res, resp.Body, artifact.Size); err != nil {
+			sentry.ReportError(ctx, fmt.Errorf("Error transferring artifact (for artifact %s/%s, bytes (%d/%d) read): %s", artifact.BucketId, artifact.Name, n, artifact.Size, err))
 			return
 		}
 		return
