@@ -1,3 +1,6 @@
+***NOTICE: THIS REPO IS NO LONGER UPDATED***
+
+
 Changes Artifacts
 =================
 An artifact server and client for use with changes. Used for storing
