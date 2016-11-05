@@ -64,7 +64,7 @@ func bindBucket(ctx context.Context, r render.Render, gc *gin.Context, db databa
 
 	if err != nil && err.EntityNotFound() {
 		// Don't log this error to Sentry
-		// Changes will hit this endpoint for non-existant buckets very often.
+		// Changes will hit this endpoint for non-existent buckets very often.
 		api.RespondWithErrorf(ctx, r, http.StatusNotFound, "Bucket not found")
 		gc.Abort()
 		return
@@ -200,7 +200,7 @@ func main() {
 
 	dbMaxOpenConns := flag.Int("db-max-open-conns", 50, "Maximum number of open connections to the DB")
 
-	shutdownTimeout := flag.Duration("shutdown-timeout", 15*time.Second, "Time to wait before closing active connections after SIGTERM signal has been recieved")
+	shutdownTimeout := flag.Duration("shutdown-timeout", 15*time.Second, "Time to wait before closing active connections after SIGTERM signal has been received")
 
 	flag.Parse()
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)

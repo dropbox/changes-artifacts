@@ -63,7 +63,7 @@ type createLogChunkReq struct {
 	Bytes      []byte
 }
 
-// CreateArtifact creates a new artifact in a open bucket.
+// CreateArtifact creates a new artifact in an open bucket.
 //
 // If an artifact with the same name already exists in the same bucket, we attempt to rename the
 // artifact by adding a suffix.
@@ -221,7 +221,7 @@ func AppendLogChunk(ctx context.Context, db database.Database, artifact *model.A
 		// previous logchunk, due to which it is retrying.
 		//
 		// This is a best-effort check - if we encounter DB errors or any mismatch in the chunk
-		// contents, we ignore this test and claim that a range mismatch occured.
+		// contents, we ignore this test and claim that a range mismatch occurred.
 		if nextByteOffset != 0 && nextByteOffset == logChunkReq.ByteOffset+logChunkReq.Size {
 			if prevLogChunk, err := db.GetLastLogChunkSeenForArtifact(artifact.Id); err == nil {
 				if prevLogChunk != nil && prevLogChunk.ByteOffset == logChunkReq.ByteOffset && prevLogChunk.Size == logChunkReq.Size && bytes.Equal(prevLogChunk.ContentBytes, contentBytes) {
@@ -600,7 +600,7 @@ func GetArtifactContent(ctx context.Context, r render.Render, req *http.Request,
 			return
 		}
 		if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
-			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, fmt.Sprintf("Bad status code %d recieved from S3", resp.StatusCode))
+			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, fmt.Sprintf("Bad status code %d received from S3", resp.StatusCode))
 			return
 		}
 		contentdisposition.SetFilename(res, filepath.Base(artifact.RelativePath))
