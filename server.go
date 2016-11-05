@@ -200,7 +200,7 @@ func main() {
 
 	dbMaxOpenConns := flag.Int("db-max-open-conns", 50, "Maximum number of open connections to the DB")
 
-	shutdownTimeout := flag.Duration("shutdown-timeout", 15*time.Second, "Time to wait before closing active connections after SIGTERM signal has been recieved")
+	shutdownTimeout := flag.Duration("shutdown-timeout", 15*time.Second, "Time to wait before closing active connections after SIGTERM signal has been received")
 
 	flag.Parse()
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)

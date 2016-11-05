@@ -600,7 +600,7 @@ func GetArtifactContent(ctx context.Context, r render.Render, req *http.Request,
 			return
 		}
 		if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
-			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, fmt.Sprintf("Bad status code %d recieved from S3", resp.StatusCode))
+			LogAndRespondWithErrorf(ctx, r, http.StatusInternalServerError, fmt.Sprintf("Bad status code %d received from S3", resp.StatusCode))
 			return
 		}
 		contentdisposition.SetFilename(res, filepath.Base(artifact.RelativePath))
