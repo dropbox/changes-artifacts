@@ -221,7 +221,7 @@ func AppendLogChunk(ctx context.Context, db database.Database, artifact *model.A
 		// previous logchunk, due to which it is retrying.
 		//
 		// This is a best-effort check - if we encounter DB errors or any mismatch in the chunk
-		// contents, we ignore this test and claim that a range mismatch occured.
+		// contents, we ignore this test and claim that a range mismatch occurred.
 		if nextByteOffset != 0 && nextByteOffset == logChunkReq.ByteOffset+logChunkReq.Size {
 			if prevLogChunk, err := db.GetLastLogChunkSeenForArtifact(artifact.Id); err == nil {
 				if prevLogChunk != nil && prevLogChunk.ByteOffset == logChunkReq.ByteOffset && prevLogChunk.Size == logChunkReq.Size && bytes.Equal(prevLogChunk.ContentBytes, contentBytes) {
