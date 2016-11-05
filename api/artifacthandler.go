@@ -63,7 +63,7 @@ type createLogChunkReq struct {
 	Bytes      []byte
 }
 
-// CreateArtifact creates a new artifact in a open bucket.
+// CreateArtifact creates a new artifact in an open bucket.
 //
 // If an artifact with the same name already exists in the same bucket, we attempt to rename the
 // artifact by adding a suffix.
